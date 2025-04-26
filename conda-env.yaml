@@ -1,0 +1,11 @@
+name: dol-mt
+channels:
+  - pytorch
+  - defaults
+dependencies:
+  - python=3.11
+  - pytorch=2.6.0+cu126
+  - pytorchao
+  - transformers
+  - sentencepiece
+  - protobuf

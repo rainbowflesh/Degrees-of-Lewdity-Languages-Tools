@@ -1,0 +1,14 @@
+.vscode
+dist
+lib/vrelnir_localization-main
+lib/degrees-of-lewdity-plus
+lib/degrees-of-lewdity
+lib/dicts/cache
+__pycache__
+*.pyc
+*.xml
+*.iml
+*.zip
+*.7z
+*.xmind
+.env
