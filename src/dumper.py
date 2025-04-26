@@ -99,8 +99,8 @@ class Dumper:
         self._sets_cache = self._formatted_pending_translate
         return self._formatted_pending_translate
 
+    """Extract and process <<set>> and <<run>> statements from a Twee file"""
     async def _dump_sets(self, file: Path) -> Optional[Dict]:
-        """Extract and process <<set>> and <<run>> statements from a Twee file"""
         # Extract raw content and set statements
         extraction_result = await self._extract_set_statements(file)
         if not extraction_result:
@@ -141,8 +141,8 @@ class Dumper:
             "padding_translate": padding_translate
         }
 
+    """Extract <<set>> and <<run>> statements from a file"""
     async def _extract_set_statements(self, file: Path) -> Optional[Tuple[List[str], List[str]]]:
-        """Extract <<set>> and <<run>> statements from a file"""
         logger.info(f"Extracting <<set>> statements from {file}")
 
         try:
@@ -165,8 +165,8 @@ class Dumper:
             logger.error(f"Unexpected error processing {file}: {e}")
             return None
 
+    """Process variable targets from set statements"""
     def _process_variable_targets(self, heads: List[str], sets: List[str]) -> Optional[Tuple[Dict, Dict, List[str]]]:
-        """Process variable targets from set statements"""
         var_targets_dict = {}
         var_lines_dict = {}
 
@@ -194,6 +194,7 @@ class Dumper:
         formatted_set_contents = [f"set {content}" for content in sets]
         return var_targets_dict, var_lines_dict, formatted_set_contents
 
+    """Find content that needs translation"""
     def _find_translatable_content(
         self,
         var_targets_dict: Dict,
@@ -201,7 +202,6 @@ class Dumper:
         formatted_set_contents: List[str],
         file: Path
     ) -> Optional[Dict]:
-        """Find content that needs translation"""
         padding_translate_vars = []
 
         for (var, targets), (_, lines) in zip(var_targets_dict.items(), var_lines_dict.items()):
@@ -236,6 +236,7 @@ class Dumper:
             ]
         }
 
+    """Dump variables from a Twee file"""
     async def _dump_variables(self, file: Path) -> Optional[Dict]:
         async with aopen(file, "r", encoding="utf-8") as fp:
             raw = await fp.read()
@@ -249,8 +250,8 @@ class Dumper:
             "variables": sorted(list(set(variables)))
         }
 
+    """Get all .twee files absolute paths"""
     async def _get_twees(self) -> Set[Path]:
-        """获取所有 .twee 文件绝对路径"""
         self._twee_files.clear()
         for root, _, file_list in os.walk("lib/degrees-of-lewdity-plus/game"):
             for file in file_list:
@@ -259,15 +260,18 @@ class Dumper:
         return self._twee_files
 
     async def _cache_variables(self) -> None:
-        async with aopen("lib/dicts/cache/_formatted_variables.json", "w", encoding="utf-8") as fp:
-            await fp.write(json.dumps(self._formatted_variables, ensure_ascii=False, indent=2))
+        try:
+            async with aopen("lib/dicts/cache/_formatted_variables.json", "w", encoding="utf-8") as fp:
+                await fp.write(json.dumps(self._formatted_variables, ensure_ascii=False, indent=2))
 
-        async with aopen("lib/dicts/cache/_variables.json", "w", encoding="utf-8") as fp:
-            await fp.write(json.dumps(self._twee_variables, ensure_ascii=False, indent=2))
+            async with aopen("lib/dicts/cache/_variables.json", "w", encoding="utf-8") as fp:
+                await fp.write(json.dumps(self._twee_variables, ensure_ascii=False, indent=2))
+        except IOError as e:
+            logger.error(f"Failed to cache files: {e}")
+            raise
 
     async def _cache_variables_notations(self) -> None:
-        """哪些变量可以翻译，写入文件，暂时弃用"""
-        filepath = Path("lib/dics/cache/variables_notation.json")
+        filepath = Path("lib/dicts/cache/variables_notation.json")
 
         old_data = {}
         if filepath.exists():

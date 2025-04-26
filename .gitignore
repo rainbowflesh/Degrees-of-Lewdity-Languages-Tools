@@ -5,6 +5,7 @@ lib/degrees-of-lewdity-plus
 lib/degrees-of-lewdity
 lib/dicts/cache
 __pycache__
+.pytest_cache
 *.pyc
 *.xml
 *.iml
@@ -12,3 +13,4 @@ __pycache__
 *.7z
 *.xmind
 .env
+.cursor

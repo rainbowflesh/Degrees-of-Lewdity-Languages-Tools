@@ -1,8 +1,8 @@
 import os
 from pysmartdl2 import SmartDL
 
-""" DownloadHelper """
-class DownloadHelper:
+""" Downloader """
+class Downloader:
     def __init__(self):
         self._paratranz_token = os.getenv("PARATRANZ_TOKEN")
         self._paratranz_url = "https://paratranz.cn/api/v2/projects/1/languages"
