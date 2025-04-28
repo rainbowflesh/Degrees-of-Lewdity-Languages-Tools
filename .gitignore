@@ -1,9 +1,9 @@
 .vscode
-dist
 lib/vrelnir_localization-main
 lib/degrees-of-lewdity-plus
 lib/degrees-of-lewdity
-lib/dicts/cache
+dicts/cache
+dicts/
 __pycache__
 .pytest_cache
 *.pyc
@@ -14,3 +14,6 @@ __pycache__
 *.xmind
 .env
 .cursor
+examples
+tests/utf8
+tests/playground

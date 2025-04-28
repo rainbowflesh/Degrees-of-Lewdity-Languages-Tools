@@ -30,14 +30,14 @@ __doc_project_structure__ = """
     - lib/ game files, extra lib, local lib
         - degrees-of-lewdity-plus
         - degrees-of-lewdity
-        - dicts
-            - raw ~70mb
-            - translated ~70mb/lang
-                - ${lang}
-            - diff
-                - ${lang}
-                    - diff files
-                    - mt_translated
+    - dicts
+        - raw ~70mb
+        - translated ~70mb/lang
+            - ${lang}
+        - diff
+            - ${lang}
+                - diff files
+                - mt_translated
     - dist/ output, build, dists
         - degrees-of-lewdity-plus
             - ${lang}
@@ -59,11 +59,25 @@ __doc_merge_helper__ = """ """
 
 
 @click.command()
-@click.option('-d', '--dump', is_flag=True, default=False, help='Run raw dicts dump')
-@click.option('-t', '--translate', is_flag=True, default=False, help='Run machine translate')
-@click.option('-p', '--provider', help='LLM provider (Available: cursor, gemini, gpt, deepseek [API,local], X-ALMA [Local]).')
-@click.option('-l', '--local', is_flag=True, default=False, help='Use a local model via Ollama instead of use API.')
-@click.option('--full', is_flag=True, default=False, help='Use the full version of local models.')
+@click.option("-d", "--dump", is_flag=True, default=False, help="Run raw dicts dump")
+@click.option(
+    "-t", "--translate", is_flag=True, default=False, help="Run machine translate"
+)
+@click.option(
+    "-p",
+    "--provider",
+    help="LLM provider (Available: cursor, gemini, gpt, deepseek [API,local], X-ALMA [Local]).",
+)
+@click.option(
+    "-l",
+    "--local",
+    is_flag=True,
+    default=False,
+    help="Use a local model via Ollama instead of use API.",
+)
+@click.option(
+    "--full", is_flag=True, default=False, help="Use the full version of local models."
+)
 def ClickHelper(dump: bool, translate: bool, provider: str, local: bool, full: bool):
     if dump:
         UseDumper()
@@ -84,7 +98,7 @@ def UseTranslator(provider: str, local: bool, full: bool):
     _vram = None
     _vram_gb = None
 
-    if (_use_local):
+    if _use_local:
 
         import torch
 
@@ -92,29 +106,30 @@ def UseTranslator(provider: str, local: bool, full: bool):
             device_count = torch.cuda.device_count()
             for i in range(device_count):
                 _vram = torch.cuda.get_device_properties(i).total_memory
-                _vram_gb = _vram / (1024 ** 3)
+                _vram_gb = _vram / (1024**3)
                 logger.info(
-                    f"Device {i}: {torch.cuda.get_device_name(i)} VRAM: {_vram_gb} GB")
+                    f"Device {i}: {torch.cuda.get_device_name(i)} VRAM: {_vram_gb} GB"
+                )
                 if _vram_gb <= 8:
                     raise Warning(
-                        f"No enough VRAM (<= 8GB) to run local models on device {i}")
+                        f"No enough VRAM (<= 8GB) to run local models on device {i}"
+                    )
         else:
             raise Exception("Run failed: CUDA is not available.")
 
     match _llm_provider:
         # --provider=X-ALMA
         case "X-ALMA":
-            if (_use_full):
+            if _use_full:
                 _translator.x_alma(_use_full)  # 27GB
             else:
                 _translator.x_alma()  # 7.05GB Q4 XS GGUF
 
         # --provider=deepseek (--local)
         case "deepseek":
-            if (_use_local):
-                if (_use_full):
-                    _translator.deepseek(
-                        _use_local, _use_full)  # 400GB
+            if _use_local:
+                if _use_full:
+                    _translator.deepseek(_use_local, _use_full)  # 400GB
                 else:
                     _translator.deepseek(_use_local)  # 6GB Q4
             else:
@@ -134,8 +149,9 @@ def UseTranslator(provider: str, local: bool, full: bool):
 
         case _:
             raise ValueError(
-                f"Invalid LLM provider: {_llm_provider}, use --help get helps")
+                f"Invalid LLM provider: {_llm_provider}, use --help get helps"
+            )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     ClickHelper()

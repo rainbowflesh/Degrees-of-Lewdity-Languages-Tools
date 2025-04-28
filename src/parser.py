@@ -1,21 +1,12 @@
-"""
-如:
-<<set VAR ...>>
-<<if VAR ...>>
-<<run VAR ...>>
-"""
+import logging
 
 
-FREQ_FUNCTIONS = {
-    ".push(",
-    ".pushUnique(",
-    ".delete(",
-    ".deleteAt(",
-    ".splice("
-}
+logger = logging.getLogger("Parser")
+
 
 class Parser:
     def __init__(self):
+
         pass
 
     def parse(self):
