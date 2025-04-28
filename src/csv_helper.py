@@ -1,421 +1,184 @@
-import csv
+from src.io_helper import IOHelper
 import logging
 import os
-import asyncio
-import shutil
-import aiofiles
-from concurrent.futures import ThreadPoolExecutor
-from typing import List, Optional, Tuple, Callable, Any
+import re
+import csv
 from pathlib import Path
-from src.io_helper import IOHelper
 
-
-logger = logging.getLogger("CSVHelper")
+logger = logging.getLogger("CSV Helper")
 
 
 class CSVHelper:
-    def __init__(self, base_directory: str):
-        self.base_directory = base_directory
-        self.io_helper = IOHelper
 
-    # Main Public Entry Points
+    def __init__(self, csv_files_path: Path):
+        self.csv_files_path = csv_files_path
+        self.io_helper = IOHelper()
+        logger.info(f"Initialized CSVHelper with path: {self.csv_files_path}")
 
-    def trim_csv(
-        self,
-        input_csv_path: str = None,
-        output_csv_path: str = None,
-        in_place: bool = True,
-    ) -> bool:
-        if input_csv_path is None:
-            input_csv_path = self.base_directory
+    def read_csv(self):
+        """Read all CSV files from the specified directory and its subdirectories."""
+        csv_files = []
+        try:
+            # Check if path exists and is a directory
+            if not self.csv_files_path.exists():
+                logger.error(f"Path does not exist: {self.csv_files_path}")
+                return []
 
-        if os.path.isdir(input_csv_path):
-            return self._trim_directory(input_csv_path, in_place)
-        else:
-            return self._trim_single_file(input_csv_path, output_csv_path, in_place)
+            if not self.csv_files_path.is_dir():
+                logger.error(f"Path is not a directory: {self.csv_files_path}")
+                return []
 
-    def sort_csv(
-        self, input_csv_path=None, output_csv_path=None, in_place=True
-    ) -> Optional[str]:
-        if input_csv_path is None:
-            csv_files = self._collect_csv_files()
+            logger.info(f"Reading CSV files from: {self.csv_files_path}")
+            # Use Path.rglob for recursive file enumeration (search in subdirectories)
+            for file_path in self.csv_files_path.rglob("*.csv"):
+                csv_files.append(str(file_path))
+                logger.info(f"Found CSV file: {file_path}")
+
             if not csv_files:
-                logger.info(f"No CSV files found in {self.base_directory}")
-                return None
-
-            for csv_file in csv_files:
-                self.sort_csv(csv_file, in_place=True)
-            return None
-
-        temp_file = None
-        try:
-            if output_csv_path is None and in_place:
-                temp_file = f"{input_csv_path}.sorted.temp"
-                output_csv_path = temp_file
-            elif output_csv_path is None:
-                output_csv_path = f"{input_csv_path}.sorted"
-
-            logger.info(f"Sorting {input_csv_path} -> {output_csv_path}")
-
-            os.makedirs(os.path.dirname(output_csv_path) or ".", exist_ok=True)
-
-            rows = self._read_csv_sync(input_csv_path)
-            if not rows:
-                logger.warning(f"No valid rows found in {input_csv_path}")
-                return None
-
-            try:
-                rows.sort(key=self._extract_sort_key)
-                logger.info(f"Sorted {len(rows)} rows")
-            except Exception as e:
                 logger.warning(
-                    f"Error during sorting: {e}. Proceeding with unsorted data."
+                    f"No CSV files found in: {self.csv_files_path} or its subdirectories"
                 )
 
-            self._write_csv_sync(output_csv_path, rows)
-
-            if temp_file and in_place:
-                shutil.move(temp_file, input_csv_path)
-                logger.debug(
-                    f"Replaced original file with sorted content: {input_csv_path}"
-                )
-
-            return input_csv_path if in_place else output_csv_path
-
+            return csv_files
         except Exception as e:
-            logger.error(f"Error sorting file {input_csv_path}: {e}")
-            self._cleanup_temp_file(temp_file)
-            return None
+            logger.error(f"Error reading CSV files: {str(e)}")
+            return []
 
-    # Async Entry Points
-
-    async def trim_csv_async(
-        self, input_path: str = None
-    ) -> Tuple[List[Any], List[Exception]]:
-        input_path = input_path or self.base_directory
-        return await self._process_files_concurrently(
-            self._trim_file_async, directory=input_path
-        )
-
-    async def sort_csv_async(
-        self, input_path: Optional[str] = None
-    ) -> Tuple[List[Any], List[Exception]]:
-        input_path = input_path or self.base_directory
-
-        if os.path.isdir(input_path):
-            return await self._process_files_concurrently(
-                self._sort_file_async, directory=input_path
-            )
-        else:
-            result = await self._sort_file_async(input_path)
-            return [result], []
-
-    # Internal Trim Functions
-
-    def _trim_directory(self, directory: str, in_place: bool) -> bool:
-        success = True
-        csv_files = self._collect_csv_files(directory)
-
+    def sort_csv(self):
+        """Sort CSV files by numeric ID in ascending order."""
+        logger.info("Starting sort_csv")
+        csv_files = self.read_csv()
         if not csv_files:
-            logger.warning(f"No CSV files found in {directory}")
-            return False
+            logger.warning("No CSV files to sort")
+            return
 
         for csv_file in csv_files:
-            if not self._trim_single_file(csv_file, None, in_place):
-                success = False
-
-        return success
-
-    def _trim_single_file(
-        self, input_csv_path: str, output_csv_path: str = None, in_place: bool = True
-    ) -> bool:
-        if output_csv_path is None and in_place:
-            output_csv_path = f"{input_csv_path}.temp"
-            overwrite_original = True
-        else:
-            overwrite_original = False
-
-        logger.debug(f"Trimming version suffix from {input_csv_path}")
-
-        try:
-            output_dir = os.path.dirname(output_csv_path)
-            if output_dir:
-                os.makedirs(output_dir, exist_ok=True)
-
-            rows = self._read_csv_sync(input_csv_path)
-            if not rows:
-                logger.warning(f"No valid rows found in {input_csv_path}")
-                return False
-
-            processed_rows = []
-            for row in rows:
-                if row:  # Ensure row is not empty
-                    try:
-                        # Clean the first column using the helper function
-                        original_id = row[0]
-                        cleaned_id = self._clean_id(original_id)
-                        # Create a new row list to avoid modifying the original during iteration
-                        new_row = [cleaned_id] + row[1:]
-                        processed_rows.append(new_row)
-                    except IndexError:
-                        logger.warning(f"Skipping row with too few columns: {row}")
-                        processed_rows.append(row)  # Keep original row if error
-                    except Exception as e:
-                        logger.warning(
-                            f"Error cleaning ID '{row[0]}': {e}. Keeping original."
-                        )
-                        processed_rows.append(row)  # Keep original row if error
-                else:
-                    processed_rows.append(row)  # Keep empty rows
-
-            self._write_csv_sync(output_csv_path, processed_rows)
-
-            if overwrite_original:
-                shutil.move(output_csv_path, input_csv_path)
-                logger.debug(f"Replaced original file: {input_csv_path}")
-            else:
-                logger.debug(f"Written to: {output_csv_path}")
-
-            return True
-
-        except FileNotFoundError:
-            logger.error(f"Input file not found: {input_csv_path}")
-        except Exception as e:
-            logger.error(f"Error processing {input_csv_path}: {e}")
-            if overwrite_original:
-                self._cleanup_temp_file(output_csv_path)
-
-        return False
-
-    # For backward compatibility
-    async def trim_version(self):
-        return await self.trim_csv_async()
-
-    def _clean_id(self, original_id: str) -> str:
-        """Cleans the ID string based on specified rules."""
-        cleaned_id = original_id.strip()
-
-        # trim """  11" -> 11
-        if cleaned_id.startswith('"""') and cleaned_id.endswith('"'):
-            content = cleaned_id[3:-3].strip()
-            numeric_part = "".join(filter(str.isdigit, content.split(" ", 1)[0]))
-            if numeric_part:
-                return numeric_part
-            else:
-                logger.warning(f"Could not extract numeric ID from: {original_id}")
-                return content
-
-        # trim 629_5_2_3|5_2_3| -> 629
-        if "|" in cleaned_id:
-            first_part = cleaned_id.split("|", 1)[0].strip()
-            if "_" in first_part:
-                id_segment = first_part.split("_")[0].strip()
-                return id_segment if id_segment else first_part
-            else:
-                return first_part
-
-        # Handle comma character (takes precedence over just underscore)
-        if "," in cleaned_id:
-            first_part = cleaned_id.split(",", 1)[0].strip()
-            # No need to check for underscore here, we assume the part before comma is the final ID
-            return first_part
-
-        # Handle underscore only (if no pipe or comma)
-        if "_" in cleaned_id:
-            id_segment = cleaned_id.split("_")[0].strip()
-            return id_segment if id_segment else cleaned_id
-
-        # If none of the above, return the stripped original ID
-        return cleaned_id
-
-    # Async Processing Functions
-
-    async def _process_files_concurrently(
-        self, process_func: Callable, directory: Optional[str] = None
-    ) -> Tuple[List[Any], List[Exception]]:
-        directory = directory or self.base_directory
-        csv_files = self._collect_csv_files(directory)
-
-        if not csv_files:
-            logger.warning(f"No CSV files found in {directory}")
-            return [], []
-
-        logger.debug(f"Found {len(csv_files)} CSV files to process")
-
-        semaphore = asyncio.Semaphore(8)
-        tasks = []
-
-        for csv_file in csv_files:
-            task = asyncio.create_task(
-                self._run_with_semaphore(semaphore, process_func, csv_file)
-            )
-            tasks.append(task)
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        failures = [r for r in results if isinstance(r, Exception)]
-        successes = [r for r in results if not isinstance(r, Exception)]
-
-        if failures:
-            logger.error(f"Failed to process {len(failures)}/{len(results)} files")
-            for failure in failures:
-                logger.error(f"  - {failure}")
-
-        logger.debug(f"Successfully processed {len(successes)}/{len(results)} files")
-        return successes, failures
-
-    async def _trim_file_async(self, file_path: str) -> str:
-        logger.debug(f"Processing {file_path}")
-        temp_file_path = f"{file_path}.temp"
-
-        try:
-            modified_rows = await self._read_and_trim_csv_async(file_path)
-
-            loop = asyncio.get_running_loop()
-            with ThreadPoolExecutor() as executor:
-                await loop.run_in_executor(
-                    executor,
-                    lambda: self._write_csv_sync(temp_file_path, modified_rows),
-                )
-
-            shutil.move(temp_file_path, file_path)
-            return file_path
-
-        except Exception as e:
-            self._cleanup_temp_file(temp_file_path)
-            logger.error(f"Error processing {file_path}: {e}")
-            raise
-
-    async def _sort_file_async(self, file_path: str) -> str:
-        logger.info(f"Sorting {file_path}")
-        loop = asyncio.get_running_loop()
-
-        with ThreadPoolExecutor() as executor:
             try:
-                return await loop.run_in_executor(
-                    executor, lambda: self.sort_csv(file_path, None, True)
+                # Read the CSV file
+                with open(csv_file, "r", encoding="utf-8", errors="ignore") as f:
+                    reader = csv.reader(f)
+                    rows = list(reader)
+
+                logger.debug(f"Open {csv_file}")
+
+                if not rows:
+                    logger.debug(f"Nothing to change in {csv_file}, skipping")
+                    continue
+
+                # Sort by numeric ID (first column)
+                sorted_data = sorted(
+                    rows,
+                    key=lambda x: int(x[0]) if x and x[0].isdigit() else float("inf"),
                 )
+
+                # Write sorted data back to file
+                with open(csv_file, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerows(sorted_data)
+
+                logger.info(f"Successfully sorted CSV file: {csv_file}")
+
             except Exception as e:
-                logger.error(f"Error sorting {file_path}: {e}")
-                raise
+                logger.error(
+                    f"Error sorting CSV file {csv_file}: {str(e)}", exc_info=True
+                )
 
-    # Helper Functions
+    def trim_csv_key(self) -> None:
+        """
+        Process CSV files to clean up IDs in the first column.
+        - trim \"""    1" / \"""  1" -> 1
+        - trim "﻿""  1" -> 1
+        - trim 40_5_3_2| -> 40
+        - trim 40_5_3_2|_5_3_2| -> 40
+        - trim "  239,1" -> 239
+        - trim rows with no key in first column
+        - handle non-UTF8 characters + ID patterns
+        - handle IDs with leading spaces
+        """
+        # TODO: use regex
+        logger.info("Starting trim_csv_key")
+        csv_files = self.read_csv()
+        if not csv_files:
+            logger.warning("No CSV files to trim")
+            return
 
-    async def _run_with_semaphore(self, semaphore, func, *args, **kwargs):
-        async with semaphore:
-            return await func(*args, **kwargs)
+        for csv_file in csv_files:
+            try:
+                # Read the CSV file
+                with open(csv_file, "r", encoding="utf-8", errors="ignore") as f:
+                    reader = csv.reader(f)
+                    rows = list(reader)
 
-    async def _read_and_trim_csv_async(self, file_path: str) -> List[List[str]]:
-        modified_rows = []
-        try:
-            async with aiofiles.open(
-                file_path, "r", encoding="utf-8-sig", newline=""
-            ) as file:
-                content = await file.read()
-                # Use csv.reader for better handling of quotes within fields if standard format occurs
-                reader = csv.reader(content.splitlines())
+                logger.debug(f"Open {csv_file}")
 
-                for row in reader:
-                    if not row:  # Skip empty rows
-                        modified_rows.append(row)
+                if not rows:
+                    logger.debug(f"Nothing to change in {csv_file}, skipping")
+                    continue
+
+                # Process each row
+                processed_data = []
+                for row in rows:
+                    # Skip rows without a key in the first column
+                    if not row or not row[0] or row[0].strip() == "":
+                        logger.debug(f"Skipping row with no key: {row}")
                         continue
 
-                    try:
-                        # Clean the first column using the helper function
-                        original_id = row[0]
-                        cleaned_id = self._clean_id(original_id)
-                        # Create a new row list to avoid modifying the original during iteration
-                        new_row = [cleaned_id] + row[1:]
-                        modified_rows.append(new_row)
-                    except IndexError:
-                        logger.warning(
-                            f"Skipping row with too few columns in {file_path}: {row}"
-                        )
-                        modified_rows.append(row)
-                    except Exception as e:
-                        logger.warning(
-                            f"Error cleaning ID '{row[0]}' in {file_path}: {e}. Keeping original."
-                        )
-                        modified_rows.append(row)
+                    # Apply trimming to the first column
+                    if row[0]:
+                        original = row[0]
 
-        except Exception as e:
-            logger.error(f"Error reading or processing {file_path}: {e}")
-            # Depending on desired behavior, maybe return partial results or empty list
-            # raise # Or re-raise the exception
+                        # Handle triple quotes pattern (with or without non-UTF8 chars)
+                        if '"""' in row[0]:
+                            match = re.search(r'""".*?(\d+)[^0-9]*', row[0])
+                            if match:
+                                row[0] = match.group(1)
 
-        return modified_rows
+                        # Handle patterns with quotes
+                        elif row[0].startswith('"'):
+                            match = re.search(r'".*?(\d+)[^0-9]*', row[0])
+                            if match:
+                                row[0] = match.group(1)
 
-    def _write_csv_sync(self, file_path: str, rows: List[List[str]]) -> None:
-        try:
-            output_dir = os.path.dirname(file_path)
-            if output_dir:
-                os.makedirs(output_dir, exist_ok=True)
+                        # Handle patterns with underscores (possibly with non-UTF8 chars)
+                        elif "_" in row[0]:
+                            # Extract numbers before first _
+                            match = re.search(r".*?(\d+)_", row[0])
+                            if match:
+                                row[0] = match.group(1)
 
-            with open(file_path, "w", encoding="utf-8", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerows(rows)
-        except Exception as e:
-            logger.error(f"Error writing to {file_path}: {e}")
-            raise
+                        # Handle patterns with commas
+                        elif "," in row[0]:
+                            # Extract number part
+                            match = re.search(r".*?(\d+),", row[0])
+                            if match:
+                                row[0] = match.group(1)
 
-    def _read_csv_sync(self, file_path: str) -> List[List[str]]:
-        rows = []
-        try:
-            with open(file_path, "r", encoding="utf-8-sig", newline="") as infile:
-                reader = csv.reader(infile)
-                rows = [row for row in reader if row]
-        except Exception as e:
-            logger.error(f"Error reading {file_path}: {e}")
-        return rows
+                        # Handle patterns with just numbers and potential spaces/non-UTF8 chars
+                        else:
+                            # Try to extract just the numbers
+                            match = re.search(r".*?(\d+)", row[0])
+                            if match:
+                                row[0] = match.group(1)
 
-    def _extract_sort_key(self, row: List[str]) -> Tuple[Any, ...]:
-        """Extract numerical sort key from the first column, placing errors last."""
-        try:
-            if not row or not row[0]:
-                # Place empty rows or rows with empty first column last
-                return (float("inf"),)
+                        # Final check - if it's not a pure number after all our efforts, skip the row
+                        if not row[0].isdigit():
+                            logger.debug(
+                                f"Could not extract numeric ID from '{original}', skipping row"
+                            )
+                            continue
 
-            id_part = row[0]
+                    processed_data.append(row)
 
-            if "|" in id_part:
-                id_part = id_part.split("|", 1)[0]
+                # Write processed data back to file
+                with open(csv_file, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerows(processed_data)
 
-            # Remove any non-numeric characters except _ before processing
-            # This handles potential variations or artifacts in the ID
-            cleaned_id_part = "".join(c for c in id_part if c.isdigit() or c == "_")
+                logger.info(
+                    f"Successfully trimmed CSV file: {csv_file} ({len(rows)} rows to {len(processed_data)} rows)"
+                )
 
-            if not cleaned_id_part:  # If cleaning results in empty string
-                return (float("inf"),)
-
-            if "_" in cleaned_id_part:
-                # Handle multi-part keys like 1_2_3
-                return tuple(map(int, cleaned_id_part.split("_")))
-            else:
-                # Handle single-part keys like 10
-                return (int(cleaned_id_part),)
-
-        except (ValueError, IndexError, Exception) as e:
-            # Place rows that cause errors during parsing last
-            logger.warning(f"Could not extract sort key from row: {row}. Error: {e}")
-            return (float("inf"),)
-
-    def _collect_csv_files(self, directory: str = None) -> List[str]:
-        directory = directory or self.base_directory
-        csv_files = []
-
-        try:
-            for root, _, files in os.walk(directory):
-                for file in files:
-                    if file.lower().endswith(".csv"):
-                        csv_files.append(os.path.join(root, file))
-        except Exception as e:
-            logger.error(f"Error collecting CSV files from {directory}: {e}")
-
-        return csv_files
-
-    def _cleanup_temp_file(self, temp_file: str) -> None:
-        try:
-            if temp_file and os.path.exists(temp_file):
-                os.unlink(temp_file)
-        except Exception as e:
-            logger.warning(f"Failed to clean up temporary file {temp_file}: {e}")
+            except Exception as e:
+                logger.error(
+                    f"Error trimming CSV file {csv_file}: {str(e)}", exc_info=True
+                )

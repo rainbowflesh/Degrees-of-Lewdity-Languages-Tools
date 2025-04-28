@@ -4,7 +4,7 @@ from pathlib import Path
 import csv
 import shutil
 
-logger = logging.getLogger("Diff")
+logger = logging.getLogger("Diff Helper")
 
 
 class DiffHelper:

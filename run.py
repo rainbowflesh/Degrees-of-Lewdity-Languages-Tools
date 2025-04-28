@@ -1,12 +1,13 @@
 import logging
+import os
+from pathlib import Path
 import click
 from asyncio.log import logger
 
+from src.csv_helper import CSVHelper
 from src.dumper import Dumper
 from src.translator import Translator
 
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger("asyncio:Run")
 
 __doc_pipelines__ = """
     Dumper pipeline:
@@ -58,6 +59,22 @@ __doc_translator__ = """ """
 __doc_merge_helper__ = """ """
 
 
+log_dir = Path("logs")
+log_dir.mkdir(exist_ok=True)
+
+log_file = log_dir / "application.log"
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(filename=log_file, encoding="utf-8"),
+    ],
+)
+
+logger = logging.getLogger("asyncio:Run")
+
+
 @click.command()
 @click.option("-d", "--dump", is_flag=True, default=False, help="Run raw dicts dump")
 @click.option(
@@ -78,11 +95,25 @@ __doc_merge_helper__ = """ """
 @click.option(
     "--full", is_flag=True, default=False, help="Use the full version of local models."
 )
-def ClickHelper(dump: bool, translate: bool, provider: str, local: bool, full: bool):
+@click.option(
+    "--format-translates",
+    default=r"dicts/translated/zh-Hans/dol",
+    help="Format the translates file, basically made for chaotic zh-hans translation files, need provide the path of translated dicts.",
+)
+def ClickHelper(
+    dump: bool,
+    translate: bool,
+    provider: str,
+    local: bool,
+    full: bool,
+    format_translates: str,
+):
     if dump:
         UseDumper()
     if translate:
         UseTranslator(provider, local, full)
+    if format_translates:
+        UseFormatTranslates(format_translates)
 
 
 def UseDumper():
@@ -151,6 +182,13 @@ def UseTranslator(provider: str, local: bool, full: bool):
             raise ValueError(
                 f"Invalid LLM provider: {_llm_provider}, use --help get helps"
             )
+
+
+def UseFormatTranslates(format_translates: str):
+    path_obj = Path(format_translates)
+    _csv_helper = CSVHelper(path_obj)
+    _csv_helper.trim_csv_key()
+    _csv_helper.sort_csv()
 
 
 if __name__ == "__main__":
