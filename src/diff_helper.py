@@ -3,67 +3,119 @@ import pandas as pd
 from pathlib import Path
 import csv
 import shutil
+import asyncio
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger("Diff Helper")
 
 """
     DiffHelper is a helper class for creating translations different files.
     Useful to find the differences between the raw English and translated files, allow translator only focus differences.
+    This implementation uses asyncio for high performance processing of multiple files in parallel.
 """
 
 
 class DiffHelper:
     def __init__(
-        self, translation_files_path: Path, raw_files_path: Path, diff_files_path: Path
+        self,
+        translation_files_path: Path,
+        raw_files_path: Path,
+        diff_files_path: Path,
+        max_workers: int = None,
     ):
         self._translation_files_path = translation_files_path
         self._raw_files_path = raw_files_path
         self._diff_files_path = diff_files_path
 
-    def create_diff(self):
-        """Processes all CSV files in the raw directory and compares them to translated files."""
+        # use core threads as worker number
+        self._max_workers = max_workers or os.cpu_count()
+        self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
+
+    async def create_diff(self):
+        """Processes all CSV files in the raw directory and compares them to translated files asynchronously."""
         # Define base paths using Path objects
         translated_base = Path(self._translation_files_path)
         raw_base = Path(self._raw_files_path)
         diff_base = Path(self._diff_files_path)
 
-        logger.info(f"Starting diff process...")
+        logger.debug(f"Starting diff process with {self._max_workers} workers...")
         logger.debug(f"Raw directory: {raw_base}")
         logger.debug(f"Translated directory: {translated_base}")
         logger.debug(f"Diff output directory: {diff_base}")
 
-        # Iterate through all CSV files in the raw directory
-        processed_files = 0
-        for raw_file in raw_base.rglob("**/*.csv"):
-            processed_files += 1
+        # collect all files to process
+        raw_files = list(raw_base.rglob("**/*.csv"))
+        total_files = len(raw_files)
+        logger.debug(f"Found {total_files} CSV files to process")
 
+        # create task list
+        tasks = []
+        for raw_file in raw_files:
             # Get the relative path of the raw file for logger, debug usage
             relative_path = raw_file.relative_to(raw_base)
-
             translated_file = translated_base / relative_path
             diff_file = diff_base / relative_path
 
-            self.diff_single_csv(raw_file, translated_file, diff_file, relative_path)
+            tasks.append(
+                self.diff_single_csv(
+                    raw_file, translated_file, diff_file, relative_path
+                )
+            )
 
-        logger.info(f"\nDiff process finished. Processed {processed_files} files.")
+        results = await asyncio.gather(*tasks)
 
-    def diff_single_csv(
+        # count successfully processed files
+        processed_files = sum(1 for r in results if r)
+        logger.info(
+            f"\nDiff process finished. Successfully processed {processed_files}/{total_files} files."
+        )
+        return processed_files
+
+    async def diff_single_csv(
         self,
         raw_file: Path,
         translated_file: Path,
         diff_file: Path,
         relative_path: Path,
     ):
-        """Compares a single raw CSV file with its translated counterpart and writes the diff."""
-        # Check if translated file exists
-        if not translated_file.is_file():
-            logger.info(
-                f"Translated file not found for {relative_path}. Copying raw file to diff."
-            )
-            diff_file.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(raw_file, diff_file)
-            return
+        """Compares a single raw CSV file with its translated counterpart and writes the diff asynchronously."""
+        try:
+            # Check if translated file exists
+            if not translated_file.is_file():
+                logger.info(
+                    f"Translated file not found for {relative_path}. Copying raw file to diff."
+                )
+                os.makedirs(diff_file.parent, exist_ok=True)
 
+                # use thread pool to copy file
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    self._executor, shutil.copy2, raw_file, diff_file
+                )
+                return True
+
+            # run pandas operation in thread pool
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                self._executor,
+                self._process_csv_files,
+                raw_file,
+                translated_file,
+                diff_file,
+                relative_path,
+            )
+            return result
+
+        except Exception as e:
+            logger.error(f"Unexpected error processing {relative_path}: {e}")
+            return False
+
+    def _process_csv_files(self, raw_file, translated_file, diff_file, relative_path):
+        """
+        Core logic for CSV file comparison, executed in thread pool
+        This code remains synchronous because pandas operations are CPU-intensive and not I/O-bound
+        """
         try:
             # Load raw CSV
             df_raw = pd.read_csv(
@@ -77,7 +129,7 @@ class DiffHelper:
 
             if df_raw.empty:
                 logger.info(f"Skipping empty raw file: {relative_path}")
-                return
+                return True
 
             # Load translated CSV to determine column structure
             try:
@@ -93,9 +145,9 @@ class DiffHelper:
                     logger.info(
                         f"Translated file is empty: {relative_path}. Copying raw file to diff."
                     )
-                    diff_file.parent.mkdir(parents=True, exist_ok=True)
+                    os.makedirs(diff_file.parent, exist_ok=True)
                     shutil.copy2(raw_file, diff_file)
-                    return
+                    return True
 
                 # Assign proper column names based on column count
                 if len(df_translated.columns) >= 3:
@@ -106,9 +158,9 @@ class DiffHelper:
                     logger.error(
                         f"Translated file has only {len(df_translated.columns)} columns, expected at least 3. {translated_file.absolute()}"
                     )
-                    diff_file.parent.mkdir(parents=True, exist_ok=True)
+                    os.makedirs(diff_file.parent, exist_ok=True)
                     shutil.copy2(raw_file, diff_file)
-                    return
+                    return True
 
                 # Create a set of translated English texts (col2) for faster lookup
                 translated_eng_texts = set(df_translated["eng"].dropna())
@@ -118,41 +170,45 @@ class DiffHelper:
 
                 if not diff_mask.any():
                     logger.info(f"No diff found for: {relative_path}")
+                    return True
                 else:
                     diff_count = diff_mask.sum()
                     logger.info(
                         f"Writing diff for: {relative_path} ({diff_count} rows)"
                     )
-                    diff_file.parent.mkdir(parents=True, exist_ok=True)
+                    os.makedirs(diff_file.parent, exist_ok=True)
 
                     # Select only id_r and english columns for the diff rows
                     diff_rows = df_raw.loc[diff_mask, ["id_r", "english"]]
                     diff_rows.to_csv(diff_file, index=False, header=False)
+                    return True
 
             except pd.errors.ParserError as e:
                 logger.error(
                     f"Error parsing translated file {translated_file.absolute()} ({relative_path}): {e}"
                 )
-                diff_file.parent.mkdir(parents=True, exist_ok=True)
+                os.makedirs(diff_file.parent, exist_ok=True)
                 shutil.copy2(raw_file, diff_file)
+                return False
             except Exception as e:
                 logger.error(
                     f"Error processing translated file {translated_file.absolute()} ({relative_path}): {e}"
                 )
-                diff_file.parent.mkdir(parents=True, exist_ok=True)
+                os.makedirs(diff_file.parent, exist_ok=True)
                 shutil.copy2(raw_file, diff_file)
+                return False
 
         except pd.errors.ParserError as e:
             logger.error(
                 f"Error parsing raw file {raw_file.absolute()} ({relative_path}): {e}"
             )
-            return
+            return False
         except Exception as e:
             logger.error(f"Unexpected error processing {relative_path}: {e}")
-            return
+            return False
 
-    def count_diff_rows(self):
-        """Count the number of diff rows in the diff files."""
+    async def count_diff_rows(self):
+        """Count the number of diff rows in the diff files asynchronously."""
         diff_files = list(self._diff_files_path.rglob("*.csv"))
 
         if not diff_files:
@@ -161,15 +217,36 @@ class DiffHelper:
 
         total_rows = 0
 
+        # create async tasks
+        tasks = []
         for file_path in diff_files:
-            try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    reader = csv.reader(f)
-                    file_rows = len(list(reader))
-                    total_rows += file_rows
-                    logger.debug(f"File {file_path}: {file_rows} rows")
-            except Exception as e:
-                logger.error(f"Error reading file {file_path}: {str(e)}")
+            tasks.append(self._count_rows_in_file(file_path))
+
+        # run all tasks in parallel
+        results = await asyncio.gather(*tasks)
+
+        # calculate total rows
+        total_rows = sum(count for count in results if count is not None)
 
         logger.info(f"Total diff rows: {total_rows} in {len(diff_files)} files")
         return total_rows
+
+    async def _count_rows_in_file(self, file_path):
+        """Count the number of rows in a single file asynchronously."""
+        try:
+            # use thread pool to read file
+            loop = asyncio.get_event_loop()
+            row_count = await loop.run_in_executor(
+                self._executor, self._count_csv_rows, file_path
+            )
+            logger.debug(f"File {file_path}: {row_count} rows")
+            return row_count
+        except Exception as e:
+            logger.error(f"Error reading file {file_path}: {str(e)}")
+            return None
+
+    def _count_csv_rows(self, file_path):
+        """Count the number of rows in a CSV file in thread pool."""
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f)
+            return len(list(reader))

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -164,11 +165,11 @@ def UseFormatTranslates(format_translates: str):
 
 def UseDiff(translation_files_path: Path, raw_files_path: Path, diff_files_path: Path):
     diff_helper = DiffHelper(translation_files_path, raw_files_path, diff_files_path)
-    diff_helper.create_diff()
-    diff_helper.count_diff_rows()
+    asyncio.run(diff_helper.create_diff())
+    asyncio.run(diff_helper.count_diff_rows())
 
 
-@click.command()
+@click.command(context_settings=dict(help_option_names=["-h", "--help"]))
 @click.option("-d", "--dump", is_flag=True, default=False, help="Run raw dicts dump")
 @click.option(
     "-t", "--translate", is_flag=True, default=False, help="Run machine translate"
