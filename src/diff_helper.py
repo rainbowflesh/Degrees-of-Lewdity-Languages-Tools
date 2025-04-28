@@ -6,17 +6,26 @@ import shutil
 
 logger = logging.getLogger("Diff Helper")
 
+"""
+    DiffHelper is a helper class for creating translations different files.
+    Useful to find the differences between the raw English and translated files, allow translator only focus differences.
+"""
+
 
 class DiffHelper:
-    def __init__(self):
-        pass
+    def __init__(
+        self, translation_files_path: Path, raw_files_path: Path, diff_files_path: Path
+    ):
+        self._translation_files_path = translation_files_path
+        self._raw_files_path = raw_files_path
+        self._diff_files_path = diff_files_path
 
-    def process_directories(self):
+    def create_diff(self):
         """Processes all CSV files in the raw directory and compares them to translated files."""
         # Define base paths using Path objects
-        translated_base = Path(r"dicts/translated/zh-Hans/dol/")
-        raw_base = Path(r"dicts/raw/dolp/")
-        diff_base = Path(r"dicts/diff/dolp/")
+        translated_base = Path(self._translation_files_path)
+        raw_base = Path(self._raw_files_path)
+        diff_base = Path(self._diff_files_path)
 
         logger.info(f"Starting diff process...")
         logger.debug(f"Raw directory: {raw_base}")
@@ -27,14 +36,13 @@ class DiffHelper:
         processed_files = 0
         for raw_file in raw_base.rglob("**/*.csv"):
             processed_files += 1
-            # Calculate the relative path from the raw_base directory
+
+            # Get the relative path of the raw file for logger, debug usage
             relative_path = raw_file.relative_to(raw_base)
 
-            # Construct the corresponding translated and diff file paths
             translated_file = translated_base / relative_path
             diff_file = diff_base / relative_path
 
-            # Call the function to process this pair of files, passing relative_path
             self.diff_single_csv(raw_file, translated_file, diff_file, relative_path)
 
         logger.info(f"\nDiff process finished. Processed {processed_files} files.")

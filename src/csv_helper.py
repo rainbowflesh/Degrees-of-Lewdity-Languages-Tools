@@ -1,11 +1,18 @@
 from src.io_helper import IOHelper
 import logging
-import os
 import re
 import csv
 from pathlib import Path
+from typing import List
 
 logger = logging.getLogger("CSV Helper")
+
+"""
+    CSVHelper is a helper class for reading and sorting CSV files.
+    It provides methods to read all CSV files from a specified directory and its subdirectories,
+    and to sort the CSV files by numeric ID in ascending order.
+    Useful to format chaotic zh-hans translation files.
+"""
 
 
 class CSVHelper:
@@ -15,34 +22,10 @@ class CSVHelper:
         self.io_helper = IOHelper()
         logger.info(f"Initialized CSVHelper with path: {self.csv_files_path}")
 
-    def read_csv(self):
+    def read_csv(self) -> List[str]:
         """Read all CSV files from the specified directory and its subdirectories."""
-        csv_files = []
-        try:
-            # Check if path exists and is a directory
-            if not self.csv_files_path.exists():
-                logger.error(f"Path does not exist: {self.csv_files_path}")
-                return []
-
-            if not self.csv_files_path.is_dir():
-                logger.error(f"Path is not a directory: {self.csv_files_path}")
-                return []
-
-            logger.info(f"Reading CSV files from: {self.csv_files_path}")
-            # Use Path.rglob for recursive file enumeration (search in subdirectories)
-            for file_path in self.csv_files_path.rglob("*.csv"):
-                csv_files.append(str(file_path))
-                logger.info(f"Found CSV file: {file_path}")
-
-            if not csv_files:
-                logger.warning(
-                    f"No CSV files found in: {self.csv_files_path} or its subdirectories"
-                )
-
-            return csv_files
-        except Exception as e:
-            logger.error(f"Error reading CSV files: {str(e)}")
-            return []
+        logger.info("Using IOHelper to read CSV files")
+        return self.io_helper.read_csv(self.csv_files_path, recursive=True)
 
     def sort_csv(self):
         """Sort CSV files by numeric ID in ascending order."""

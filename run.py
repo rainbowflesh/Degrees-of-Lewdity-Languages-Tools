@@ -5,6 +5,7 @@ import click
 from asyncio.log import logger
 
 from src.csv_helper import CSVHelper
+from src.diff_helper import DiffHelper
 from src.dumper import Dumper
 from src.translator import Translator
 
@@ -100,6 +101,12 @@ logger = logging.getLogger("asyncio:Run")
     default=r"dicts/translated/zh-Hans/dol",
     help="Format the translates file, basically made for chaotic zh-hans translation files, need provide the path of translated dicts.",
 )
+@click.option(
+    "--diff",
+    is_flag=True,
+    default=False,
+    help="Create diff files between raw and translated dicts.",
+)
 def ClickHelper(
     dump: bool,
     translate: bool,
@@ -107,6 +114,7 @@ def ClickHelper(
     local: bool,
     full: bool,
     format_translates: str,
+    diff: bool,
 ):
     if dump:
         UseDumper()
@@ -114,6 +122,8 @@ def ClickHelper(
         UseTranslator(provider, local, full)
     if format_translates:
         UseFormatTranslates(format_translates)
+    if diff:
+        UseDiff()
 
 
 def UseDumper():
@@ -189,6 +199,11 @@ def UseFormatTranslates(format_translates: str):
     _csv_helper = CSVHelper(path_obj)
     _csv_helper.trim_csv_key()
     _csv_helper.sort_csv()
+
+
+def UseDiff():
+    diff_helper = DiffHelper()
+    diff_helper.create_diff()
 
 
 if __name__ == "__main__":

@@ -10,4 +10,4 @@ def test_diff():
     # Create an instance of the class
     diff_helper = DiffHelper()
     # Call the instance method
-    diff_helper.process_directories()
+    diff_helper.create_diff()
