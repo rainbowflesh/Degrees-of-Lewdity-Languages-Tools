@@ -82,6 +82,16 @@ logger = logging.getLogger("asyncio:Run")
     "-t", "--translate", is_flag=True, default=False, help="Run machine translate"
 )
 @click.option(
+    "--format-translates",
+    help="Format the translates file, basically made for chaotic zh-hans translation files, need provide the path of translated dicts.",
+)
+@click.option(
+    "--diff",
+    is_flag=True,
+    default=False,
+    help="Create diff files between raw and translated dicts.",
+)
+@click.option(
     "-p",
     "--provider",
     help="LLM provider (Available: cursor, gemini, gpt, deepseek [API,local], X-ALMA [Local]).",
@@ -96,26 +106,25 @@ logger = logging.getLogger("asyncio:Run")
 @click.option(
     "--full", is_flag=True, default=False, help="Use the full version of local models."
 )
-@click.option(
-    "--format-translates",
-    default=r"dicts/translated/zh-Hans/dol",
-    help="Format the translates file, basically made for chaotic zh-hans translation files, need provide the path of translated dicts.",
-)
-@click.option(
-    "--diff",
-    is_flag=True,
-    default=False,
-    help="Create diff files between raw and translated dicts.",
-)
+@click.pass_context
 def ClickHelper(
+    ctx,
     dump: bool,
     translate: bool,
+    format_translates: str,
+    diff: bool,
     provider: str,
     local: bool,
     full: bool,
-    format_translates: str,
-    diff: bool,
 ):
+    """
+    Degrees of Lewdity Languages Tool - Utilities for managing Degrees of Lewdity translations.
+
+    Run without arguments will show this help message.
+    """
+    if not any([dump, translate, format_translates, diff]):
+        click.echo(ctx.get_help())
+        return
     if dump:
         UseDumper()
     if translate:

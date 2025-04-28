@@ -25,7 +25,7 @@ class CSVHelper:
     def read_csv(self) -> List[str]:
         """Read all CSV files from the specified directory and its subdirectories."""
         logger.info("Using IOHelper to read CSV files")
-        return self.io_helper.read_csv(self.csv_files_path, recursive=True)
+        return self.io_helper.read_files(self.csv_files_path, ".csv", recursive=True)
 
     def sort_csv(self):
         """Sort CSV files by numeric ID in ascending order."""
