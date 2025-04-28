@@ -3,6 +3,9 @@ import os
 from pathlib import Path
 import click
 from asyncio.log import logger
+import datetime
+
+import colorlog
 
 from src.csv_helper import CSVHelper
 from src.diff_helper import DiffHelper
@@ -60,10 +63,18 @@ __doc_translator__ = """ """
 __doc_merge_helper__ = """ """
 
 
+# log helper
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
 
-log_file = log_dir / "application.log"
+# 创建带时间戳的日志文件名
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+log_file = log_dir / f"{timestamp}_run.log"
+
+handler = colorlog.StreamHandler()
+logger = colorlog.getLogger(__name__)
+logger.addHandler(handler)
+
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -72,67 +83,8 @@ logging.basicConfig(
         logging.FileHandler(filename=log_file, encoding="utf-8"),
     ],
 )
-
 logger = logging.getLogger("asyncio:Run")
-
-
-@click.command()
-@click.option("-d", "--dump", is_flag=True, default=False, help="Run raw dicts dump")
-@click.option(
-    "-t", "--translate", is_flag=True, default=False, help="Run machine translate"
-)
-@click.option(
-    "--format-translates",
-    help="Format the translates file, basically made for chaotic zh-hans translation files, need provide the path of translated dicts.",
-)
-@click.option(
-    "--diff",
-    is_flag=True,
-    default=False,
-    help="Create diff files between raw and translated dicts.",
-)
-@click.option(
-    "-p",
-    "--provider",
-    help="LLM provider (Available: cursor, gemini, gpt, deepseek [API,local], X-ALMA [Local]).",
-)
-@click.option(
-    "-l",
-    "--local",
-    is_flag=True,
-    default=False,
-    help="Use a local model via Ollama instead of use API.",
-)
-@click.option(
-    "--full", is_flag=True, default=False, help="Use the full version of local models."
-)
-@click.pass_context
-def ClickHelper(
-    ctx,
-    dump: bool,
-    translate: bool,
-    format_translates: str,
-    diff: bool,
-    provider: str,
-    local: bool,
-    full: bool,
-):
-    """
-    Degrees of Lewdity Languages Tool - Utilities for managing Degrees of Lewdity translations.
-
-    Run without arguments will show this help message.
-    """
-    if not any([dump, translate, format_translates, diff]):
-        click.echo(ctx.get_help())
-        return
-    if dump:
-        UseDumper()
-    if translate:
-        UseTranslator(provider, local, full)
-    if format_translates:
-        UseFormatTranslates(format_translates)
-    if diff:
-        UseDiff()
+logger.info(f"Logging to {log_file}")
 
 
 def UseDumper():
@@ -210,9 +162,71 @@ def UseFormatTranslates(format_translates: str):
     _csv_helper.sort_csv()
 
 
-def UseDiff():
-    diff_helper = DiffHelper()
+def UseDiff(translation_files_path: Path, raw_files_path: Path, diff_files_path: Path):
+    diff_helper = DiffHelper(translation_files_path, raw_files_path, diff_files_path)
     diff_helper.create_diff()
+    diff_helper.count_diff_rows()
+
+
+@click.command()
+@click.option("-d", "--dump", is_flag=True, default=False, help="Run raw dicts dump")
+@click.option(
+    "-t", "--translate", is_flag=True, default=False, help="Run machine translate"
+)
+@click.option(
+    "--format-translates",
+    help="Format the translated file, basically made for chaotic zh-hans translation files, need to provide the path of translated dicts.",
+)
+@click.option(
+    "-p",
+    "--provider",
+    help="LLM provider (Available: cursor, gemini, gpt, deepseek [API,local], X-ALMA [Local]).",
+)
+@click.option(
+    "-l",
+    "--local",
+    is_flag=True,
+    default=False,
+    help="Use a local model via Ollama instead of using API.",
+)
+@click.option(
+    "--full", is_flag=True, default=False, help="Use the full version of local models."
+)
+@click.option(
+    "--diff",
+    nargs=3,
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
+    help="Create diff files between raw and translated dicts. Usage: --diff <translation_path> <raw_path> <diff_path>",
+)
+@click.pass_context
+def ClickHelper(
+    ctx,
+    dump: bool,
+    translate: bool,
+    format_translates: str,
+    provider: str,
+    local: bool,
+    full: bool,
+    diff: tuple,
+):
+    """
+    Degrees of Lewdity Languages Tool - Utilities for managing Degrees of Lewdity translations.
+
+    Run without arguments to show this help message.
+    """
+    if not any([dump, translate, format_translates, diff]):
+        click.echo(ctx.get_help())
+        return
+
+    if dump:
+        UseDumper()
+    if translate:
+        UseTranslator(provider, local, full)
+    if format_translates:
+        UseFormatTranslates(format_translates)
+    if diff:
+        translation_files_path, raw_files_path, diff_files_path = map(Path, diff)
+        UseDiff(translation_files_path, raw_files_path, diff_files_path)
 
 
 if __name__ == "__main__":

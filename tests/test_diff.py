@@ -11,3 +11,12 @@ def test_diff():
     diff_helper = DiffHelper()
     # Call the instance method
     diff_helper.create_diff()
+
+
+def test_count_diff_rows():
+    diff_helper = DiffHelper(
+        Path("dicts/translated/zh-Hans/dol"),
+        Path("dicts/raw/dol"),
+        Path("dicts/diff/dolp"),
+    )
+    diff_helper.count_diff_rows()

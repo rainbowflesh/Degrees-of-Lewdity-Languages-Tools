@@ -17,6 +17,12 @@ poetry install --no-root
 poetry run python run.py --help
 ```
 
+### Create diff files
+
+```sh
+poetry run python run.py --diff dicts/translated/zh-Hans/dol dicts/raw/dolp dicts/diff/dolp
+```
+
 ### Use machine translation
 
 ```sh

@@ -20,16 +20,13 @@ class CSVHelper:
     def __init__(self, csv_files_path: Path):
         self.csv_files_path = csv_files_path
         self.io_helper = IOHelper()
-        logger.info(f"Initialized CSVHelper with path: {self.csv_files_path}")
 
     def read_csv(self) -> List[str]:
         """Read all CSV files from the specified directory and its subdirectories."""
-        logger.info("Using IOHelper to read CSV files")
         return self.io_helper.read_files(self.csv_files_path, ".csv", recursive=True)
 
     def sort_csv(self):
         """Sort CSV files by numeric ID in ascending order."""
-        logger.info("Starting sort_csv")
         csv_files = self.read_csv()
         if not csv_files:
             logger.warning("No CSV files to sort")
@@ -42,10 +39,8 @@ class CSVHelper:
                     reader = csv.reader(f)
                     rows = list(reader)
 
-                logger.debug(f"Open {csv_file}")
-
                 if not rows:
-                    logger.debug(f"Nothing to change in {csv_file}, skipping")
+                    logger.warning(f"Nothing to change in {csv_file}, skipping")
                     continue
 
                 # Sort by numeric ID (first column)
@@ -77,12 +72,12 @@ class CSVHelper:
         - trim rows with no key in first column
         - handle non-UTF8 characters + ID patterns
         - handle IDs with leading spaces
+        - remove column 2 if it contains "1\"\"\"
         """
         # TODO: use regex
-        logger.info("Starting trim_csv_key")
         csv_files = self.read_csv()
         if not csv_files:
-            logger.warning("No CSV files to trim")
+            logger.warning("No CSV files to trim, skipping")
             return
 
         for csv_file in csv_files:
@@ -92,18 +87,16 @@ class CSVHelper:
                     reader = csv.reader(f)
                     rows = list(reader)
 
-                logger.debug(f"Open {csv_file}")
-
-                if not rows:
-                    logger.debug(f"Nothing to change in {csv_file}, skipping")
-                    continue
+                # Also read raw lines for debugging
+                with open(csv_file, "r", encoding="utf-8", errors="ignore") as f:
+                    raw_lines = f.readlines()
 
                 # Process each row
                 processed_data = []
-                for row in rows:
+                for i, row in enumerate(rows):
                     # Skip rows without a key in the first column
                     if not row or not row[0] or row[0].strip() == "":
-                        logger.debug(f"Skipping row with no key: {row}")
+                        logger.warning(f"Skipping row with no key: {row}")
                         continue
 
                     # Apply trimming to the first column
@@ -145,10 +138,36 @@ class CSVHelper:
 
                         # Final check - if it's not a pure number after all our efforts, skip the row
                         if not row[0].isdigit():
-                            logger.debug(
+                            logger.warning(
                                 f"Could not extract numeric ID from '{original}', skipping row"
                             )
                             continue
+
+                    if len(row) > 3:
+                        col2 = row[1]
+
+                        # 特别针对 "1""" 格式的检测
+                        # 在CSV解析后，可能会变为1"，因为双引号被转义了
+                        if (
+                            col2 == '1"'
+                            or col2 == '2"'
+                            or col2
+                            in [
+                                '"1""',
+                                '1"""',
+                                '"1"""',
+                                '1"',
+                                '"2""',
+                                '2"""',
+                                '"2"""',
+                                '2"',
+                            ]
+                            or ("1" in col2 and '"' in col2)
+                            or re.search(r'["\'].*?1.*?["\']', col2)
+                        ):
+                            logger.info(f"Removing column 2 with content: {repr(col2)}")
+
+                            row.pop(1)
 
                     processed_data.append(row)
 

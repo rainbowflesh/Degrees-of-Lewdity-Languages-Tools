@@ -120,7 +120,7 @@ class DiffHelper:
                     logger.info(f"No diff found for: {relative_path}")
                 else:
                     diff_count = diff_mask.sum()
-                    logger.debug(
+                    logger.info(
                         f"Writing diff for: {relative_path} ({diff_count} rows)"
                     )
                     diff_file.parent.mkdir(parents=True, exist_ok=True)
@@ -150,3 +150,26 @@ class DiffHelper:
         except Exception as e:
             logger.error(f"Unexpected error processing {relative_path}: {e}")
             return
+
+    def count_diff_rows(self):
+        """Count the number of diff rows in the diff files."""
+        diff_files = list(self._diff_files_path.rglob("*.csv"))
+
+        if not diff_files:
+            logger.warning(f"No CSV files found in {self._diff_files_path}")
+            return 0
+
+        total_rows = 0
+
+        for file_path in diff_files:
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    reader = csv.reader(f)
+                    file_rows = len(list(reader))
+                    total_rows += file_rows
+                    logger.debug(f"File {file_path}: {file_rows} rows")
+            except Exception as e:
+                logger.error(f"Error reading file {file_path}: {str(e)}")
+
+        logger.info(f"Total diff rows: {total_rows} in {len(diff_files)} files")
+        return total_rows
