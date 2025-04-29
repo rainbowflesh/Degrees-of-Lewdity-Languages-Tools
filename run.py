@@ -93,67 +93,21 @@ def UseDumper():
     _dumper.dump()
 
 
-def UseTranslator(provider: str, local: bool, full: bool):
-    _translator = Translator()
-    _llm_provider = provider
-    _use_local = local
-    _use_full = full
-    _vram = None
-    _vram_gb = None
-
-    if _use_local:
-
-        import torch
-
-        if torch.cuda.is_available():
-            device_count = torch.cuda.device_count()
-            for i in range(device_count):
-                _vram = torch.cuda.get_device_properties(i).total_memory
-                _vram_gb = _vram / (1024**3)
-                logger.info(
-                    f"Device {i}: {torch.cuda.get_device_name(i)} VRAM: {_vram_gb} GB"
-                )
-                if _vram_gb <= 8:
-                    raise Warning(
-                        f"No enough VRAM (<= 8GB) to run local models on device {i}"
-                    )
-        else:
-            raise Exception("Run failed: CUDA is not available.")
-
-    match _llm_provider:
-        # --provider=X-ALMA
-        case "X-ALMA":
-            if _use_full:
-                _translator.x_alma(_use_full)  # 27GB
-            else:
-                _translator.x_alma()  # 7.05GB Q4 XS GGUF
-
-        # --provider=deepseek (--local)
-        case "deepseek":
-            if _use_local:
-                if _use_full:
-                    _translator.deepseek(_use_local, _use_full)  # 400GB
-                else:
-                    _translator.deepseek(_use_local)  # 6GB Q4
-            else:
-                _translator.deepseek()
-
-        # --provider=cursor
-        case "cursor":
-            _translator.cursor()
-
-        # --provider=gemini
-        case "gemini":
-            _translator.gemini()
-
-        # --provider=gpt
-        case "gpt":
-            _translator.gpt()
-
-        case _:
-            raise ValueError(
-                f"Invalid LLM provider: {_llm_provider}, use --help get helps"
-            )
+def UseTranslator(input_files_path: Path, output_files_path: Path, resume: bool):
+    _translator = Translator(
+        input_path=input_files_path,
+        save=True,
+        output_path=output_files_path,
+    )
+    if resume:
+        while True:
+            _translator.create_translates()
+            state = _translator.load_state()
+            if not state:
+                break
+    else:
+        # start new run
+        _translator.create_translates()
 
 
 def UseFormatTranslates(format_translates: str):
@@ -172,7 +126,17 @@ def UseDiff(translation_files_path: Path, raw_files_path: Path, diff_files_path:
 @click.command(context_settings=dict(help_option_names=["-h", "--help"]))
 @click.option("-d", "--dump", is_flag=True, default=False, help="Run raw dicts dump")
 @click.option(
-    "-t", "--translate", is_flag=True, default=False, help="Run machine translate"
+    "-t",
+    "--translate",
+    nargs=2,
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
+    help="Run machine translate. Usage: --translate <input_path> <output_path>",
+)
+@click.option(
+    "--resume",
+    is_flag=True,
+    default=False,
+    help="Resume last batch translation from saved state",
 )
 @click.option(
     "--format-translates",
@@ -203,12 +167,13 @@ def UseDiff(translation_files_path: Path, raw_files_path: Path, diff_files_path:
 def ClickHelper(
     ctx,
     dump: bool,
-    translate: bool,
+    translate: tuple,
     format_translates: str,
     provider: str,
     local: bool,
     full: bool,
     diff: tuple,
+    resume: bool,
 ):
     """
     Degrees of Lewdity Languages Tool - Utilities for managing Degrees of Lewdity translations.
@@ -222,7 +187,8 @@ def ClickHelper(
     if dump:
         UseDumper()
     if translate:
-        UseTranslator(provider, local, full)
+        input_files_path, output_files_path = map(Path, translate)
+        UseTranslator(input_files_path, output_files_path, resume)
     if format_translates:
         UseFormatTranslates(format_translates)
     if diff:
