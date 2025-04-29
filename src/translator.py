@@ -62,16 +62,11 @@ class Translator:
         self._state_file = Path(self._output_files_path) / "state.json"
 
     def create_translates(self) -> None:
-        state = self.load_state()
-        state_file = state["last_file"] if state else None
-        state_row = state["last_row"] if state else -1
-
         if self._save_to_file:
             os.makedirs(self._output_files_path, exist_ok=True)
-
         token_limit = 32000
         batch_token_count = 0
-        total_rows = 0
+        total_translated_rows = 0
         tokenizer = AutoTokenizer.from_pretrained(
             "Qwen/Qwen3-8B", trust_remote_code=True, use_fast=False
         )
@@ -79,22 +74,33 @@ class Translator:
         for dirpath, _, filenames in os.walk(self._input_files_path):
             for filename in filenames:
                 if not filename.endswith(".csv"):
-                    continue
+                    continue  # ignore non-csv files
 
-                padding = os.path.join(dirpath, filename)
-                padding_path = os.path.relpath(padding, self._input_files_path)
-                if state_file and padding_path < state_file:
-                    logger.info(f"Skip processed files {padding_path}")
-                    continue
+                padding_file = os.path.join(dirpath, filename)
+                padding_file_relpath = os.path.relpath(
+                    padding_file, self._input_files_path
+                )  # this path use to write files with same structure
 
-                translates_dist = os.path.join(self._output_files_path, padding_path)
-                os.makedirs(os.path.dirname(translates_dist), exist_ok=True)
+                translated_file = os.path.join(
+                    self._output_files_path, padding_file_relpath
+                )
 
-                mode = "a" if state_file == padding_path else "w"
+                if not os.path.exists(translated_file):
+                    os.makedirs(os.path.dirname(translated_file), exist_ok=True)
+                    logger.info(
+                        f"File {padding_file} contain no translates, start a new run"
+                    )
+                    # TODO: send file to use_qwen
+
+                padding_total_rows = self.get_valid_row_count(padding_file)
+                translated_total_rows = self.get_valid_row_count(translated_file)
+                last_tr_id = self.get_last_translated_row_id(translated_file)
+
+                mode = "a" if translated_total_rows < padding_total_rows else "w"
                 with (
-                    open(padding, "r", encoding="utf-8") as input_file,
+                    open(padding_file, "r", encoding="utf-8") as input_file,
                     open(
-                        translates_dist, mode, encoding="utf-8", newline=""
+                        translated_file, mode, encoding="utf-8", newline=""
                     ) as output_file,
                 ):
 
@@ -102,20 +108,16 @@ class Translator:
                     writer = csv.writer(output_file)
 
                     for row_idx, row in enumerate(reader):
-                        if state_file == padding_path and row_idx <= state_row:
-                            continue  # skip processed rows
-
                         if len(row) < 2:
                             continue  # skip invalid row
 
                         input_text = row[1]
                         token_count = self.token_counter(input_text, tokenizer)
                         logger.info(
-                            f"Translate {padding} id {row[0]} token will use: {token_count}"
+                            f"Translate {padding_file} id {row[0]} token will use: {token_count}"
                         )
 
                         if batch_token_count + token_count > token_limit:
-                            self.save_state(padding_path, row_idx, batch_token_count)
                             logger.warning(
                                 f"Batch token count exceeded ({batch_token_count} + {token_count} > {token_limit}), restarting from next row"
                             )
@@ -123,28 +125,24 @@ class Translator:
 
                         translation = self.use_qwen(input_text)
                         batch_token_count += token_count
-                        total_rows += 1
+                        total_translated_rows += 1
 
                         if self._save_to_file:
                             try:
                                 row.append(translation)
                                 writer.writerow(row)
-                                self.save_state(
-                                    padding_path, row_idx, batch_token_count
-                                )
                                 logger.debug(
-                                    f"Wrote translated row to: {translates_dist}"
+                                    f"Wrote translated row to: {translated_file}"
                                 )
                             except Exception as e:
                                 logger.error(
-                                    f"Error writing to file {translates_dist}: {e}"
+                                    f"Error writing to file {translated_file}: {e}"
                                 )
                         else:
                             logger.info(f"Translated: {input_text} → {translation}")
 
-        self.reset_state()
         logger.info(
-            f"Finished batch. Total rows translated: {total_rows}, total tokens used: {batch_token_count}"
+            f"Total rows translated: {total_translated_rows}, total tokens used: {batch_token_count}"
         )
 
     def scan_for_translation(self, padding_path, translated_path):
@@ -237,31 +235,3 @@ class Translator:
                     except ValueError:
                         continue
         return last_valid_row_id
-
-    @deprecated()
-    def reset_state(self):
-        state_path = Path(self._output_files_path) / "state.json"
-        if state_path.exists():
-            os.remove(state_path)
-
-    @deprecated()
-    def load_state(self):
-        if not os.path.exists(self._state_file):
-            logger.info("No state file found, starting new translation")
-            return None
-        with open(self._state_file, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    @deprecated()
-    def save_state(self, file: str, row_idx: int, token_used: int):
-        state = {
-            "last_file": file,
-            "last_row": row_idx,
-            "token_used": token_used,
-            "last_model": self._model,
-            "timestamp": datetime.now().isoformat(),
-        }
-        with open(self._state_file, "w") as f:
-            # fcntl.flock(f, fcntl.LOCK_EX)
-            json.dump(state, f, indent=2)
-            # fcntl.flock(f, fcntl.LOCK_UN)
