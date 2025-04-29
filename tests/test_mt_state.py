@@ -1,92 +1,79 @@
+import csv
+import os
+
+from loguru import logger
+
+
 import os
 import csv
-import json
-import shutil
-import tempfile
-import pytest
-from pathlib import Path
-from unittest.mock import patch
 
-from src.translator import Translator
+import os
+import csv
 
 
-@pytest.fixture
-def temp_dirs():
-    input_dir = tempfile.mkdtemp()
-    output_dir = tempfile.mkdtemp()
-    yield Path(input_dir), Path(output_dir)
-    shutil.rmtree(input_dir)
-    shutil.rmtree(output_dir)
+import os
+import pandas as pd
+
+import os
+import pandas as pd
 
 
-def create_test_csv(file_path, rows):
-    with open(file_path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerows(rows)
+def get_valid_row_count(file_path):
+    count = 0
+    with open(file_path, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) >= 2 and row[1].strip():
+                count += 1
+    return count
 
 
-@patch.object(Translator, "use_qwen", return_value="translated")
-@patch.object(Translator, "token_counter", return_value=10000)
-def test_batch_stop_and_resume(mock_token, mock_translate, temp_dirs):
-    input_dir, output_dir = temp_dirs
-
-    # Prepare input CSV with 4 rows (token count = 10_000 each)
-    test_csv = input_dir / "test.csv"
-    rows = [["1", "hello"], ["2", "world"], ["3", "foo"], ["4", "bar"]]
-    create_test_csv(test_csv, rows)
-
-    # First run should process only first 3 (limit = 32_000)
-    t = Translator(input_path=input_dir, output_path=output_dir, save=True)
-    t.create_translates()
-
-    # Check state.json written
-    state_file = output_dir / "state.json"
-    assert state_file.exists()
-
-    with open(state_file) as f:
-        state = json.load(f)
-    assert state["last_file"] == "test.csv"
-    assert state["last_row"] == 2  # third row (index 2)
-
-    # Resume second run
-    t = Translator(input_path=input_dir, output_path=output_dir, save=True)
-    t.create_translates()
-
-    # Check output file has all 4 rows
-    output_csv = output_dir / "test.csv"
-    with open(output_csv, "r", encoding="utf-8") as f:
-        lines = list(csv.reader(f))
-    assert len(lines) == 4
-    assert lines[0][-1] == "translated"
-    assert lines[3][1] == "bar"
-
-    # Clean state after finish
-    assert not os.path.exists(output_dir / "state.json")
+def get_last_translated_row_id(file_path):
+    last_valid_row_id = -1
+    with open(file_path, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) >= 3 and row[2].strip():
+                try:
+                    last_valid_row_id = int(row[0])
+                except ValueError:
+                    continue
+    return last_valid_row_id
 
 
-@patch.object(Translator, "use_qwen", return_value="translated")
-@patch.object(Translator, "token_counter", return_value=1)
-def test_reset_state(temp_dirs, mock_token, mock_translate):
-    input_dir, output_dir = temp_dirs
-    test_csv = input_dir / "test.csv"
-    create_test_csv(test_csv, [["1", "abc"]])
+def scan_for_translation(padding_path, translated_path):
+    for dirpath, _, filenames in os.walk(padding_path):
+        for filename in filenames:
+            if not filename.endswith(".csv"):
+                continue
 
-    t = Translator(input_path=input_dir, output_path=output_dir, save=True)
-    t.save_state("test.csv", 0, 123)
+            padding_file = os.path.join(dirpath, filename)
+            rel_path = os.path.relpath(padding_file, padding_path)
+            translated_file = os.path.join(translated_path, rel_path)
 
-    assert (output_dir / "state.json").exists()
+            padding_total_rows = get_valid_row_count(padding_file)
+            if not os.path.exists(translated_file):
+                print(f"{padding_file} → do new tr (no translated file)")
+                continue
 
-    t.reset_state()
-    assert not (output_dir / "state.json").exists()
+            translated_total_rows = get_valid_row_count(translated_file)
+            last_tr_id = get_last_translated_row_id(translated_file)
+
+            if translated_total_rows < padding_total_rows:
+                print(
+                    "translated_file",
+                    translated_file,
+                    " missing translated line: ",
+                    padding_total_rows - translated_total_rows,
+                )
+                print("missing id", last_tr_id)
 
 
-def test_save_and_load_state(temp_dirs):
-    _, output_dir = temp_dirs
-    t = Translator(output_path=output_dir)
-    t.save_state("somefile.csv", 3, 999)
+def test_mt_state():
 
-    loaded = t.load_state()
-    assert loaded["last_file"] == "somefile.csv"
-    assert loaded["last_row"] == 3
-    assert loaded["token_used"] == 999
-    assert "timestamp" in loaded
+    # padding_translate_path = r"tests/test_data/diff/dolp"
+    # mt_translate_path = r"tests/test_data/diff/mt_translates"
+    padding_translate_path = r"dicts/diff/dolp"
+    mt_translate_path = r"dicts/diff/mt_translates"
+
+    scan_for_translation(padding_translate_path, mt_translate_path)

@@ -7,6 +7,7 @@ import os
 import csv
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
+from deprecated import deprecated
 from dotenv import load_dotenv
 from huggingface_hub import Padding
 from ollama import ChatResponse, Client, chat
@@ -91,14 +92,14 @@ class Translator:
 
                 mode = "a" if state_file == padding_path else "w"
                 with (
-                    open(padding, "r", encoding="utf-8") as src_file,
+                    open(padding, "r", encoding="utf-8") as input_file,
                     open(
                         translates_dist, mode, encoding="utf-8", newline=""
-                    ) as dst_file,
+                    ) as output_file,
                 ):
 
-                    reader = csv.reader(src_file)
-                    writer = csv.writer(dst_file)
+                    reader = csv.reader(input_file)
+                    writer = csv.writer(output_file)
 
                     for row_idx, row in enumerate(reader):
                         if state_file == padding_path and row_idx <= state_row:
@@ -146,6 +147,35 @@ class Translator:
             f"Finished batch. Total rows translated: {total_rows}, total tokens used: {batch_token_count}"
         )
 
+    def scan_for_translation(self, padding_path, translated_path):
+        for dirpath, _, filenames in os.walk(padding_path):
+            for filename in filenames:
+                if not filename.endswith(".csv"):
+                    continue
+
+                padding_file = os.path.join(dirpath, filename)
+                rel_path = os.path.relpath(padding_file, padding_path)
+                translated_file = os.path.join(translated_path, rel_path)
+
+                padding_total_rows = self.get_valid_row_count(padding_file)
+                if not os.path.exists(translated_file):
+                    logger.info(f"{padding_file} → do tr (no translated file)")
+                    # TODO: send file to use_qwen
+
+                translated_total_rows = self.get_valid_row_count(translated_file)
+                last_tr_id = self.get_last_translated_row_id(translated_file)
+
+                if translated_total_rows < padding_total_rows:
+                    # TODO: send line id = last_tr_id col2 to use_qwen
+                    logger.info(
+                        "Translated file <",
+                        translated_file,
+                        "> missing translation lines idx: ",
+                        last_tr_id,
+                        " Total missing lines: ",
+                        padding_total_rows - translated_total_rows,
+                    )
+
     def use_qwen(self, input: str) -> str:
         start_time = time.time()
         model = self._model
@@ -187,11 +217,34 @@ class Translator:
         content = Prompt.SYSTEM.value + Prompt.ZH_HANS.value + input
         return len(tokenizer.tokenize(content))
 
+    def get_valid_row_count(self, file_path):
+        count = 0
+        with open(file_path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) >= 2 and row[1].strip():
+                    count += 1
+        return count
+
+    def get_last_translated_row_id(self, file_path):
+        last_valid_row_id = -1
+        with open(file_path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) >= 3 and row[2].strip():
+                    try:
+                        last_valid_row_id = int(row[0])
+                    except ValueError:
+                        continue
+        return last_valid_row_id
+
+    @deprecated()
     def reset_state(self):
         state_path = Path(self._output_files_path) / "state.json"
         if state_path.exists():
             os.remove(state_path)
 
+    @deprecated()
     def load_state(self):
         if not os.path.exists(self._state_file):
             logger.info("No state file found, starting new translation")
@@ -199,6 +252,7 @@ class Translator:
         with open(self._state_file, "r", encoding="utf-8") as f:
             return json.load(f)
 
+    @deprecated()
     def save_state(self, file: str, row_idx: int, token_used: int):
         state = {
             "last_file": file,
