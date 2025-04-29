@@ -1,0 +1,27 @@
+/set system '/no_think'
+
+任务：将英文翻译成中文
+规则：
+1. 保留所有 HTML、Twee、JS 标签结构不变。
+2. 所有 HTML、Twee、JS 标签不参与翻译。
+3. 逐标签查找需要翻译的部分。
+4. 所有形如 <<...>>、<...>、`...` 的标签结构完整保留，不进行翻译。
+5. 所有形如 [[文本|文本]] 的结构中，仅翻译左侧双括号内, 至管道标记符的部分到为中文，右侧不变。
+6. 遇到 "Degrees of Lewdity Plus"，统一翻译为“欲都孤儿威力加强版”。
+翻译:
+
+"<<socialiseicon ""ask"">><<link [[Ask for raise (0:05)|Docks Raise]]>><<pass 5>><<set $dockwage += Math.clamp($dockwage + 150, 0, 3000)>><<dockstatus -20>><</link>><<llcool>>"
+
+Welcome to Degrees of Lewdity Plus <<print StartConfig.version>><<if StartConfig.versionName>> <<print StartConfig.versionName>><</if>>. We're making a few changes to your game so it supports this latest version.
+
+Welcome back to Degrees of Lewdity Plus <<- StartConfig.version>><<if StartConfig.versionName>> <<print StartConfig.versionName>><</if>>.
+
+"You have switched from a modded version of the game, from <<- $saveVersions.last()>> back to Vanilla. <span class=""red"">This is dangerous, ''DO NOT'' report bugs to the Vanilla Developer Team.</span>."
+
+"<span class=""red"">If you want to avoid potential issues, create a new save or stay with the mod.</span>"
+
+Welcome to Degrees of Lewdity Plus <<- StartConfig.version>><<if StartConfig.versionName>> <<print StartConfig.versionName>><</if>>!
+
+"It seems you're transferring a save from Vanilla <<- $saveVersions.last()>> to DoLP. <span class=""gold"">Please check your game settings in a safe room like your bedroom to check DoLP Settings!</span> Not doing this will result in you missing out on 99% of DoLP's content! DoLP is built on the idea of player control so nearly everything is a setting the player can change."
+
+"<span class=""red"">Transferring your save from Vanilla to Modded is fine but Modded to Vanilla or Modded to Modded is almost always going to cause issues.</span>"

@@ -8,7 +8,7 @@ import datetime
 
 import colorlog
 
-from src.csv_helper import CSVHelper
+from src.formatter import Formatter
 from src.diff_helper import DiffHelper
 from src.dumper import Dumper
 from src.translator import Translator
@@ -158,7 +158,7 @@ def UseTranslator(provider: str, local: bool, full: bool):
 
 def UseFormatTranslates(format_translates: str):
     path_obj = Path(format_translates)
-    _csv_helper = CSVHelper(path_obj)
+    _csv_helper = Formatter(path_obj)
     _csv_helper.trim_csv_key()
     _csv_helper.sort_csv()
 
