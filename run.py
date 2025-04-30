@@ -132,7 +132,7 @@ def UseDiff(translation_files_path: Path, raw_files_path: Path, diff_files_path:
     "--resume",
     is_flag=True,
     default=False,
-    help="Resume last batch translation from saved state",
+    help="Automatic check translate state and resume, used to check for missing translations, or to continue the last batch translation job",
 )
 @click.option(
     "--format-translates",
