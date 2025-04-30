@@ -1,4 +1,3 @@
-import logging
 from src.translator import Translator
 
 

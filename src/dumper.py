@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import json
 import os
 import re
@@ -8,8 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Any
 
 from aiofiles import open as aopen
-
-logger = logging.getLogger("Dumper")
+from loguru import logger
 
 
 class Regexes(Enum):

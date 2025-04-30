@@ -15,8 +15,8 @@ def test_diff():
 
 def test_count_diff_rows():
     diff_helper = DiffHelper(
-        Path("dicts/translated/zh-Hans/dol"),
-        Path("dicts/raw/dol"),
+        Path("dicts/translated/zh-Hans/utf8/"),
+        Path("dicts/raw/dolp"),
         Path("dicts/diff/dolp"),
     )
     diff_helper.count_diff_rows()

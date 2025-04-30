@@ -1,18 +1,12 @@
-from asyncio.log import logger
 from enum import Enum
-import logging
 import os
 import csv
 from pathlib import Path
-from dotenv import load_dotenv
+from loguru import logger
 from ollama import ChatResponse, chat
 from src.io_helper import IOHelper
 from transformers import AutoTokenizer
 import time
-
-
-load_dotenv()
-logger = logging.getLogger("Translator")
 
 
 class Prompt(Enum):
@@ -34,6 +28,7 @@ class Prompt(Enum):
 14. 英语中常用"静态"的表述，如"xx是xx的"，而中文的表达习惯往往更加"动态"，需要翻译为中文的表述风格，禁止滥用"的"或滥用被动语态
 15. 不要输出说明文字, 只需要翻译结果
 16. 对于没有列出的规则，请按照中文的表达习惯与常识进行翻译
+17. 情爱相关的描述可以信达雅一点, 但是不要过度
 
 翻译:
 """
