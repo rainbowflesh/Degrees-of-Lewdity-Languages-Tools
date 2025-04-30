@@ -374,20 +374,6 @@ wrapt = ">=1.10,<2"
 dev = ["PyTest", "PyTest-Cov", "bump2version (<1)", "setuptools ; python_version >= \"3.12\"", "tox"]
 
 [[package]]
-name = "dotenv"
-version = "0.9.9"
-description = "Deprecated package"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "dotenv-0.9.9-py2.py3-none-any.whl", hash = "sha256:29cf74a087b31dafdb5a446b6d7e11cbce8ed2741540e2339c69fbef92c94ce9"},
-]
-
-[package.dependencies]
-python-dotenv = "*"
-
-[[package]]
 name = "dukpy"
 version = "0.5.0"
 description = "Simple JavaScript interpreter for Python"
@@ -1405,4 +1391,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11, <4.0"
-content-hash = "39fff40296b1137091d207862d60fae52f81fa9be132358818964648f2ca6193"
+content-hash = "0324decc41267dd4937bfe33c250d117e8cecccf6beec04014205578728976f4"

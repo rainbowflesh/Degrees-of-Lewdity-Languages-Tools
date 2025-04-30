@@ -19,3 +19,5 @@ logs
 tests/playground
 tests/test_data
 tests/utf8
+.env*
+!.env.template

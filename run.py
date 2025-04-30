@@ -1,18 +1,15 @@
 import asyncio
-import logging
-import os
 from pathlib import Path
 import click
-from asyncio.log import logger
 import datetime
-
-import colorlog
+from dotenv import dotenv_values
+from loguru import logger
 
 from src.formatter import Formatter
 from src.diff_helper import DiffHelper
 from src.dumper import Dumper
 from src.translator import Translator
-
+from src.downloader import Downloader
 
 __doc_pipelines__ = """
     Dumper pipeline:
@@ -67,30 +64,35 @@ __doc_merge_helper__ = """ """
 # log helper
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
-
-# 创建带时间戳的日志文件名
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 log_file = log_dir / f"{timestamp}_run.log"
-
-handler = colorlog.StreamHandler()
-logger = colorlog.getLogger(__name__)
-logger.addHandler(handler)
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(filename=log_file, encoding="utf-8"),
-    ],
+logger.add(
+    log_file,
+    rotation="10 MB",
+    retention="7 days",
+    compression="zip",
+    level="INFO",
+    enqueue=True,
 )
-logger = logging.getLogger("asyncio:Run")
-logger.info(f"Logging to {log_file}")
+
+
+_env = dotenv_values(".env")
 
 
 def UseDumper():
     _dumper = Dumper()
     _dumper.dump()
+
+
+def UseDownloader(lang: str):
+    _downloader = Downloader(_env)
+    logger.info(f"Downloading {lang} dicts")
+    match lang:
+        case "zh-hans" | "zh-Hans" | "zh-CN" | "zh-cn" | "cn":
+            result = _downloader.download_dol_zh_hans()
+            _downloader.extract_download(result, "dicts/translated/zh-Hans/")
+        case _:
+            raise ValueError(f"Unsupported language: {lang}")
 
 
 def UseTranslator(input_files_path: Path, output_files_path: Path, resume: bool):
@@ -139,12 +141,10 @@ def UseDiff(translation_files_path: Path, raw_files_path: Path, diff_files_path:
     help="Format the translated file, basically made for chaotic zh-hans translation files, need to provide the path of translated dicts.",
 )
 @click.option(
-    "-p",
     "--provider",
     help="LLM provider (Available: cursor, gemini, gpt, deepseek [API,local], X-ALMA [Local]).",
 )
 @click.option(
-    "-l",
     "--local",
     is_flag=True,
     default=False,
@@ -159,6 +159,10 @@ def UseDiff(translation_files_path: Path, raw_files_path: Path, diff_files_path:
     type=click.Path(exists=True, file_okay=False, dir_okay=True),
     help="Create diff files between raw and translated dicts. Usage: --diff <translation_path> <raw_path> <diff_path>",
 )
+@click.option(
+    "--download",
+    help="Download the translated dicts. Usage: --download <language code>, eg. --download zh-hans",
+)
 @click.pass_context
 def ClickHelper(
     ctx,
@@ -170,15 +174,13 @@ def ClickHelper(
     full: bool,
     diff: tuple,
     resume: bool,
+    download: str,
 ):
     """
     Degrees of Lewdity Languages Tool - Utilities for managing Degrees of Lewdity translations.
 
     Run without arguments to show this help message.
     """
-    if not any([dump, translate, format_translates, diff]):
-        click.echo(ctx.get_help())
-        return
 
     if dump:
         UseDumper()
@@ -190,6 +192,10 @@ def ClickHelper(
     if diff:
         translation_files_path, raw_files_path, diff_files_path = map(Path, diff)
         UseDiff(translation_files_path, raw_files_path, diff_files_path)
+    if download:
+        UseDownloader(download)
+    else:
+        click.echo(ctx.get_help())
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ poetry run python run.py --help
 ### Create diff files
 
 ```sh
-poetry run python run.py --diff dicts/translated/zh-Hans/dol dicts/raw/dolp dicts/diff/dolp
+poetry run python run.py --diff dicts/translated/zh-Hans/utf8/ dicts/raw/dolp dicts/diff/dolp
 ```
 
 ### Use machine translation
