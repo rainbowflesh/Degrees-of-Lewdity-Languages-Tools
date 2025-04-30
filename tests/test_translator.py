@@ -9,4 +9,4 @@ def test_qwen():
         use_local=True,
         save=False,
     )
-    tr.create_translates()
+    tr.search_and_translate()

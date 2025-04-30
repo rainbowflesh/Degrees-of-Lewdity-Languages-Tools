@@ -53,111 +53,140 @@ class Translator:
         input_path: Path = None,
         output_path: Path = Path("tests/test_data/mt_translates"),
     ):
+        self._io_helper = IOHelper()
+
         self._use_local = use_local
         self._model = model
-        self._io_helper = IOHelper()
         self._save_to_file = save
         self._input_files_path = input_path
         self._output_files_path = output_path
-        self._state_file = Path(self._output_files_path) / "state.json"
 
-    def create_translates(self) -> None:
-        if self._save_to_file:
-            os.makedirs(self._output_files_path, exist_ok=True)
-        token_limit = 32000
-        batch_token_count = 0
-        total_translated_rows = 0
-        tokenizer = AutoTokenizer.from_pretrained(
+        self._tokenizer = AutoTokenizer.from_pretrained(
             "Qwen/Qwen3-8B", trust_remote_code=True, use_fast=False
         )
+        self._qwen_token_limit = 40000
+        self._total_translated_rows = 0
+        self._token_limit_hit = False
+
+        self._system_prompt = Prompt.SYSTEM.value
+        self._zh_hans_prompt = Prompt.ZH_HANS.value
+        self._prompt_token_length = len(
+            self._tokenizer.tokenize(self._system_prompt + self._zh_hans_prompt)
+        )
+
+    def resume_translate(self):
+        logger.info("Starting translation resume loop...")
+
+        while True:
+            self._token_limit_hit = False  # Reset before each scan
+            translated_before = self._total_translated_rows
+
+            self.search_and_translate()
+
+            translated_after = self._total_translated_rows
+            translated_this_round = translated_after - translated_before
+
+            if translated_this_round == 0:
+                logger.info("No new rows translated this round.")
+
+                if not self._token_limit_hit:
+                    logger.info("All translations complete.")
+                    break
+                else:
+                    logger.info("Token limit hit immediately; pausing until next call.")
+                    break
+            else:
+                logger.info(f"Translated {translated_this_round} rows this round.")
+
+    def search_and_translate(self) -> None:
+        if self._save_to_file:
+            os.makedirs(self._output_files_path, exist_ok=True)
 
         for dirpath, _, filenames in os.walk(self._input_files_path):
+            if not filenames:
+                continue  # skip empty
+            filenames.sort()
             for filename in filenames:
                 if not filename.endswith(".csv"):
-                    continue  # ignore non-csv files
+                    continue  # skip none csv
 
                 padding_file = os.path.join(dirpath, filename)
-                padding_file_relpath = os.path.relpath(
-                    padding_file, self._input_files_path
-                )  # this path use to write files with same structure
-
-                translates_file = os.path.join(
-                    self._output_files_path, padding_file_relpath
-                )
+                rel_path = os.path.relpath(padding_file, self._input_files_path)
+                translates_file = os.path.join(self._output_files_path, rel_path)
 
                 if not os.path.exists(translates_file):
                     os.makedirs(os.path.dirname(translates_file), exist_ok=True)
                     logger.info(
-                        f"File {padding_file} contain no translates, start a new run"
+                        f"File {padding_file} has no translations, starting new run"
                     )
-                    self.process_translation(
-                        padding_file,
-                        translates_file,
-                        start_idx=0,
-                        mode="w",
-                        save=self._save_to_file,
-                    )
+                    self.do_batch_translate(padding_file, translates_file, 0, "w")
                     continue
 
-                padding_total_rows = self._get_valid_row_count(padding_file)
-                translated_total_rows = self._get_valid_row_count(translates_file)
-
-                if translated_total_rows >= padding_total_rows:
-                    logger.info(
-                        f"File {padding_file} translation is finished, skipping"
-                    )
-                    continue  # already fully translated
-
-                logger.info(
-                    f"File {padding_file} contain unfinished translates, continue from last line {translated_total_rows}"
+                padding_rows = self._get_valid_row_count(
+                    padding_file, check_translation=False
                 )
-                self.process_translation(
-                    padding_file,
-                    translates_file,
-                    start_idx=translated_total_rows,
-                    mode="a",
-                    save=self._save_to_file,
+                translated_rows = self._get_valid_row_count(
+                    translates_file, check_translation=True
                 )
 
-    def process_translation(
+                if translated_rows >= padding_rows:
+                    logger.info(f"File {padding_file} translation complete, skipping")
+                    continue
+
+                logger.info(f"Resuming {padding_file} from line {translated_rows + 1}")
+                self._truncate_csv_newline(
+                    translates_file, translated_rows
+                )  # append to new line
+                self.do_batch_translate(
+                    padding_file, translates_file, translated_rows, "a"
+                )
+
+    def do_batch_translate(
         self,
         padding_file: str,
         translates_file: str,
         start_idx: int,
         mode: str,
-        save: bool,
     ) -> None:
         batch_token_count = 0
-        with open(padding_file, "r", encoding="utf-8") as input_file:
-            reader = csv.reader(input_file)
+        writer = None
+        output_file = None
 
-            if save:
-                os.makedirs(os.path.dirname(translates_file), exist_ok=True)
-                with open(
-                    translates_file, mode, encoding="utf-8", newline=""
-                ) as output_file:
-                    writer = csv.writer(output_file)
-                    for row_idx, row in enumerate(reader):
-                        if row_idx < start_idx:
-                            continue  # skip already translated rows
-                        if len(row) < 2:
-                            continue  # skip invalid row
-                        input_text = row[1]
-                        translation = self.use_qwen(input_text)
+        if self._save_to_file:
+            os.makedirs(os.path.dirname(translates_file), exist_ok=True)
+            output_file = open(translates_file, mode, encoding="utf-8", newline="")
+            writer = csv.writer(output_file)
+
+        try:
+            with open(padding_file, "r", encoding="utf-8") as input_file:
+                reader = csv.reader(input_file)
+
+                for row_idx, row in enumerate(reader):
+                    if row_idx < start_idx or len(row) < 2:
+                        continue  # skip invalid row
+
+                    input_text = row[1]
+                    input_token_count = self.token_counter(input_text)
+
+                    translation = self.use_qwen(input_text)
+                    output_token_count = self.token_counter(translation)
+
+                    total_token_count = input_token_count + output_token_count
+                    if batch_token_count + total_token_count > self._qwen_token_limit:
+                        logger.info("Token limit reached, stop this batch")
+                        self._token_limit_hit = True
+                        return
+
+                    batch_token_count += total_token_count
+                    self._total_translated_rows += 1
+
+                    if writer:
                         row.append(translation)
                         writer.writerow(row)
-                        logger.info(
-                            f"Writeing translation for row {row_idx}: {translation} in {translates_file}"
-                        )
-            else:
-                for row_idx, row in enumerate(reader):
-                    if row_idx < start_idx:
-                        continue  # skip already translated rows
-                    if len(row) < 2:
-                        continue  # skip invalid row
-                    input_text = row[1]
-                    translation = self.use_qwen(input_text)
-                    logger.info(translation)
+                        logger.debug(f"Translation {row_idx}: {translation} -> saved")
+        finally:
+            if output_file:
+                output_file.close()
 
     def use_qwen(self, input: str) -> str:
         start_time = time.time()
@@ -196,17 +225,32 @@ class Translator:
             duration = end_time - start_time
             logger.debug(f"use_qwen execution time: {duration:.4f} seconds")
 
-    def token_counter(self, input: str, tokenizer) -> int:
-        content = Prompt.SYSTEM.value + Prompt.ZH_HANS.value + input
-        return len(tokenizer.tokenize(content))
+    def token_counter(self, input: str) -> int:
+        input_tokens = len(self._tokenizer.tokenize(input))
+        return self._prompt_token_length + input_tokens
 
-    def _get_valid_row_count(self, file_path):
+    def _truncate_csv_newline(self, file_path: str, n_lines: int):
+        with open(file_path, "r", encoding="utf-8") as f:
+            rows = list(csv.reader(f))[:n_lines]
+        with open(file_path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
+
+    def _get_valid_row_count(
+        self, file_path: str, check_translation: bool = False
+    ) -> int:
         count = 0
         with open(file_path, "r", encoding="utf-8") as f:
             reader = csv.reader(f)
             for row in reader:
-                if len(row) >= 2 and row[1].strip():
-                    count += 1
+                if not row or len(row) < 2:
+                    continue  # skip invalid rows
+                if check_translation:
+                    if len(row) >= 3 and row[2].strip():  # 第三列是翻译内容
+                        count += 1
+                else:
+                    if row[1].strip():  # 第二列是原文内容
+                        count += 1
         return count
 
     def _get_last_translated_row_id(self, file_path):

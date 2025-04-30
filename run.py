@@ -100,14 +100,10 @@ def UseTranslator(input_files_path: Path, output_files_path: Path, resume: bool)
         output_path=output_files_path,
     )
     if resume:
-        while True:
-            _translator.create_translates()
-            state = _translator.load_state()
-            if not state:
-                break
+        _translator.resume_translate
     else:
         # start new run
-        _translator.create_translates()
+        _translator.search_and_translate()
 
 
 def UseFormatTranslates(format_translates: str):
