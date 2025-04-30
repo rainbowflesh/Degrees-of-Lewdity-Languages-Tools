@@ -112,7 +112,7 @@ class Translator:
                 if not os.path.exists(translates_file):
                     os.makedirs(os.path.dirname(translates_file), exist_ok=True)
                     logger.info(
-                        f"File {padding_file} has no translations, starting new run"
+                        f"No translates found in {padding_file}, starting new run"
                     )
                     self.do_batch_translate(padding_file, translates_file, 0, "w")
                     continue
