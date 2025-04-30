@@ -1,16 +1,11 @@
 from asyncio.log import logger
-from datetime import datetime
 from enum import Enum
-import json
 import logging
 import os
 import csv
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
-from deprecated import deprecated
 from dotenv import load_dotenv
-from huggingface_hub import Padding
-from ollama import ChatResponse, Client, chat
+from ollama import ChatResponse, chat
 from src.io_helper import IOHelper
 from transformers import AutoTokenizer
 import time
@@ -122,10 +117,10 @@ class Translator:
                     self.do_batch_translate(padding_file, translates_file, 0, "w")
                     continue
 
-                padding_rows = self._get_valid_row_count(
+                padding_rows = self._get_csv_row_count(
                     padding_file, check_translation=False
                 )
-                translated_rows = self._get_valid_row_count(
+                translated_rows = self._get_csv_row_count(
                     translates_file, check_translation=True
                 )
 
@@ -149,44 +144,85 @@ class Translator:
         mode: str,
     ) -> None:
         batch_token_count = 0
-        writer = None
-        output_file = None
 
-        if self._save_to_file:
-            os.makedirs(os.path.dirname(translates_file), exist_ok=True)
-            output_file = open(translates_file, mode, encoding="utf-8", newline="")
-            writer = csv.writer(output_file)
+        with self._open_output_file(translates_file, mode) as writer:
+            try:
+                with open(padding_file, "r", encoding="utf-8") as input_file:
+                    reader = csv.reader(input_file)
 
-        try:
-            with open(padding_file, "r", encoding="utf-8") as input_file:
-                reader = csv.reader(input_file)
+                    for row_idx, row in enumerate(reader):
+                        if row_idx < start_idx or len(row) < 2:
+                            continue  # skip invalid row
 
-                for row_idx, row in enumerate(reader):
-                    if row_idx < start_idx or len(row) < 2:
-                        continue  # skip invalid row
+                        input_text = row[1]
+                        input_token_count = self.token_counter(input_text)
 
-                    input_text = row[1]
-                    input_token_count = self.token_counter(input_text)
+                        # estimate total token size
+                        estimated_total = (
+                            batch_token_count + input_token_count * 2
+                        )  # assume output smaller 2 times than input
+                        if estimated_total > self._qwen_token_limit:
+                            logger.info("Estimated token limit reached, stopping batch")
+                            self._token_limit_hit = True
+                            return
 
-                    translation = self.use_qwen(input_text)
-                    output_token_count = self.token_counter(translation)
+                        translation = self.use_qwen(input_text)
+                        output_token_count = self.token_counter(translation)
 
-                    total_token_count = input_token_count + output_token_count
-                    if batch_token_count + total_token_count > self._qwen_token_limit:
-                        logger.info("Token limit reached, stop this batch")
-                        self._token_limit_hit = True
-                        return
+                        total_token_count = input_token_count + output_token_count
+                        if (
+                            batch_token_count + total_token_count
+                            > self._qwen_token_limit
+                        ):
+                            logger.info("Token limit reached, stop this batch")
+                            self._token_limit_hit = True
+                            return
 
-                    batch_token_count += total_token_count
-                    self._total_translated_rows += 1
+                        batch_token_count += total_token_count
+                        self._total_translated_rows += 1
 
-                    if writer:
-                        row.append(translation)
-                        writer.writerow(row)
-                        logger.debug(f"Translation {row_idx}: {translation} -> saved")
-        finally:
-            if output_file:
-                output_file.close()
+                        if writer:
+                            row.append(translation)
+                            writer.writerow(row)
+                            logger.debug(
+                                f"Translation {row_idx}: {translation} -> saved"
+                            )
+            except Exception as e:
+                logger.error(f"Error in batch translation: {str(e)}")
+                raise
+
+    def _open_output_file(self, file_path: str, mode: str):
+        """Create CSV writer if needed"""
+
+        class NullWriter:
+            def writerow(self, _):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+        if not self._save_to_file:
+            return NullWriter()
+
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        file = open(file_path, mode, encoding="utf-8", newline="")
+        writer = csv.writer(file)
+
+        class FileWriterContext:
+            def __init__(self, file, writer):
+                self.file = file
+                self.writer = writer
+
+            def __enter__(self):
+                return self.writer
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                self.file.close()
+
+        return FileWriterContext(file, writer)
 
     def use_qwen(self, input: str) -> str:
         start_time = time.time()
@@ -205,16 +241,10 @@ class Translator:
             )
 
             full_response = response["message"]["content"]
-
-            # trim useless thinking block, leave last line as response
-            if "<think>" in full_response and "</think>" in full_response:
-                translated = full_response.split("</think>", 1)[1].strip()
-            else:
-                paragraphs = [p.strip() for p in full_response.split("\n\n")]
-                translated = next((p for p in reversed(paragraphs) if p), full_response)
+            translated = self._extract_translation(full_response)
 
             logger.debug(f"Input: {input}")
-            logger.debug(f"Output: {full_response}")
+            logger.debug(f"Output: {translated}")
             return translated
 
         except Exception as e:
@@ -224,6 +254,15 @@ class Translator:
             end_time = time.time()
             duration = end_time - start_time
             logger.debug(f"use_qwen execution time: {duration:.4f} seconds")
+
+    def _extract_translation(self, full_response: str) -> str:
+        """trim thinking block from full response"""
+        if "<think>" in full_response and "</think>" in full_response:
+            return full_response.split("</think>", 1)[1].strip()
+
+        # leave last line as result
+        paragraphs = [p.strip() for p in full_response.split("\n\n")]
+        return next((p for p in reversed(paragraphs) if p), full_response)
 
     def token_counter(self, input: str) -> int:
         input_tokens = len(self._tokenizer.tokenize(input))
@@ -236,9 +275,10 @@ class Translator:
             writer = csv.writer(f)
             writer.writerows(rows)
 
-    def _get_valid_row_count(
+    def _get_csv_row_count(
         self, file_path: str, check_translation: bool = False
     ) -> int:
+        """count csv row with optional check_translation"""
         count = 0
         with open(file_path, "r", encoding="utf-8") as f:
             reader = csv.reader(f)
@@ -246,10 +286,10 @@ class Translator:
                 if not row or len(row) < 2:
                     continue  # skip invalid rows
                 if check_translation:
-                    if len(row) >= 3 and row[2].strip():  # 第三列是翻译内容
+                    if len(row) >= 3 and row[2].strip():  # translates
                         count += 1
                 else:
-                    if row[1].strip():  # 第二列是原文内容
+                    if row[1].strip():  # raw
                         count += 1
         return count
 
