@@ -81,98 +81,83 @@ class Translator:
                     padding_file, self._input_files_path
                 )  # this path use to write files with same structure
 
-                translated_file = os.path.join(
+                translates_file = os.path.join(
                     self._output_files_path, padding_file_relpath
                 )
 
-                if not os.path.exists(translated_file):
-                    os.makedirs(os.path.dirname(translated_file), exist_ok=True)
+                if not os.path.exists(translates_file):
+                    os.makedirs(os.path.dirname(translates_file), exist_ok=True)
                     logger.info(
                         f"File {padding_file} contain no translates, start a new run"
                     )
-                    # TODO: send file to use_qwen
-
-                padding_total_rows = self.get_valid_row_count(padding_file)
-                translated_total_rows = self.get_valid_row_count(translated_file)
-                last_tr_id = self.get_last_translated_row_id(translated_file)
-
-                mode = "a" if translated_total_rows < padding_total_rows else "w"
-                with (
-                    open(padding_file, "r", encoding="utf-8") as input_file,
-                    open(
-                        translated_file, mode, encoding="utf-8", newline=""
-                    ) as output_file,
-                ):
-
-                    reader = csv.reader(input_file)
-                    writer = csv.writer(output_file)
-
-                    for row_idx, row in enumerate(reader):
-                        if len(row) < 2:
-                            continue  # skip invalid row
-
-                        input_text = row[1]
-                        token_count = self.token_counter(input_text, tokenizer)
-                        logger.info(
-                            f"Translate {padding_file} id {row[0]} token will use: {token_count}"
-                        )
-
-                        if batch_token_count + token_count > token_limit:
-                            logger.warning(
-                                f"Batch token count exceeded ({batch_token_count} + {token_count} > {token_limit}), restarting from next row"
-                            )
-                            return
-
-                        translation = self.use_qwen(input_text)
-                        batch_token_count += token_count
-                        total_translated_rows += 1
-
-                        if self._save_to_file:
-                            try:
-                                row.append(translation)
-                                writer.writerow(row)
-                                logger.debug(
-                                    f"Wrote translated row to: {translated_file}"
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"Error writing to file {translated_file}: {e}"
-                                )
-                        else:
-                            logger.info(f"Translated: {input_text} → {translation}")
-
-        logger.info(
-            f"Total rows translated: {total_translated_rows}, total tokens used: {batch_token_count}"
-        )
-
-    def scan_for_translation(self, padding_path, translated_path):
-        for dirpath, _, filenames in os.walk(padding_path):
-            for filename in filenames:
-                if not filename.endswith(".csv"):
+                    self.process_translation(
+                        padding_file,
+                        translates_file,
+                        start_idx=0,
+                        mode="w",
+                        save=self._save_to_file,
+                    )
                     continue
 
-                padding_file = os.path.join(dirpath, filename)
-                rel_path = os.path.relpath(padding_file, padding_path)
-                translated_file = os.path.join(translated_path, rel_path)
+                padding_total_rows = self._get_valid_row_count(padding_file)
+                translated_total_rows = self._get_valid_row_count(translates_file)
 
-                padding_total_rows = self.get_valid_row_count(padding_file)
-                if not os.path.exists(translated_file):
-                    logger.info(f"{padding_file} → do tr (no translated file)")
-                    # TODO: send file to use_qwen
-
-                translated_total_rows = self.get_valid_row_count(translated_file)
-                last_tr_id = self.get_last_translated_row_id(translated_file)
-
-                if translated_total_rows < padding_total_rows:
-                    # TODO: send line id = last_tr_id col2 to use_qwen
+                if translated_total_rows >= padding_total_rows:
                     logger.info(
-                        "Translated file <",
-                        translated_file,
-                        "> missing translation lines idx: ",
-                        last_tr_id,
-                        " Total missing lines: ",
-                        padding_total_rows - translated_total_rows,
+                        f"File {padding_file} translation is finished, skipping"
                     )
+                    continue  # already fully translated
+
+                logger.info(
+                    f"File {padding_file} contain unfinished translates, continue from last line {translated_total_rows}"
+                )
+                self.process_translation(
+                    padding_file,
+                    translates_file,
+                    start_idx=translated_total_rows,
+                    mode="a",
+                    save=self._save_to_file,
+                )
+
+    def process_translation(
+        self,
+        padding_file: str,
+        translates_file: str,
+        start_idx: int,
+        mode: str,
+        save: bool,
+    ) -> None:
+        batch_token_count = 0
+        with open(padding_file, "r", encoding="utf-8") as input_file:
+            reader = csv.reader(input_file)
+
+            if save:
+                os.makedirs(os.path.dirname(translates_file), exist_ok=True)
+                with open(
+                    translates_file, mode, encoding="utf-8", newline=""
+                ) as output_file:
+                    writer = csv.writer(output_file)
+                    for row_idx, row in enumerate(reader):
+                        if row_idx < start_idx:
+                            continue  # skip already translated rows
+                        if len(row) < 2:
+                            continue  # skip invalid row
+                        input_text = row[1]
+                        translation = self.use_qwen(input_text)
+                        row.append(translation)
+                        writer.writerow(row)
+                        logger.info(
+                            f"Writeing translation for row {row_idx}: {translation} in {translates_file}"
+                        )
+            else:
+                for row_idx, row in enumerate(reader):
+                    if row_idx < start_idx:
+                        continue  # skip already translated rows
+                    if len(row) < 2:
+                        continue  # skip invalid row
+                    input_text = row[1]
+                    translation = self.use_qwen(input_text)
+                    logger.info(translation)
 
     def use_qwen(self, input: str) -> str:
         start_time = time.time()
@@ -215,7 +200,7 @@ class Translator:
         content = Prompt.SYSTEM.value + Prompt.ZH_HANS.value + input
         return len(tokenizer.tokenize(content))
 
-    def get_valid_row_count(self, file_path):
+    def _get_valid_row_count(self, file_path):
         count = 0
         with open(file_path, "r", encoding="utf-8") as f:
             reader = csv.reader(f)
@@ -224,7 +209,7 @@ class Translator:
                     count += 1
         return count
 
-    def get_last_translated_row_id(self, file_path):
+    def _get_last_translated_row_id(self, file_path):
         last_valid_row_id = -1
         with open(file_path, "r", encoding="utf-8") as f:
             reader = csv.reader(f)

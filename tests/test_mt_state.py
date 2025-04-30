@@ -70,7 +70,7 @@ def scan_for_translation(padding_path, translated_path):
 
 
 def use_qwen(str):
-    pass  # dummy
+    pass
 
 
 def process_translation(
@@ -94,9 +94,7 @@ def process_translation(
                     translation = use_qwen(input_text)
                     row.append(translation)
                     writer.writerow(row)
-                    logger.info(
-                        f"Writeing translation for row {row_idx}: {translation} in {translates_file}"
-                    )
+
         else:
             for row_idx, row in enumerate(reader):
                 if row_idx < start_idx:
@@ -105,7 +103,6 @@ def process_translation(
                     continue  # skip invalid row
                 input_text = row[1]
                 translation = use_qwen(input_text)
-                logger.info(translation)
 
 
 def create_translates(_save_to_file, _input_files_path, _output_files_path) -> None:
@@ -148,7 +145,7 @@ def create_translates(_save_to_file, _input_files_path, _output_files_path) -> N
                 continue  # already fully translated
 
             logger.info(
-                f"File {padding_file} contain unfinished translates, continue from last line {translated_total_rows}"
+                f"File {padding_file} contain unfinished translates, continue from last line {translated_total_rows + 1 }"
             )
             process_translation(
                 padding_file,
