@@ -17,8 +17,9 @@ class Prompt(Enum):
 2. 所有 HTML、Twee、JS 标签不参与翻译
 3. 逐标签查找需要翻译的部分
 4. 所有形如 <<...>>、<...>、`...` 的标签结构完整保留，不翻译里面的文字
-5. 所有形如 [[文本|文本]], [[...|...]], [[test|test]], [[Text|TEXT]] 的结构中，仅翻译左侧双括号内, 至管道标记符的部分到为中文, 不要混淆<<...>>
-6. 专用名词对照表:  ["Degrees of Lewdity Plus", "dick", "penis", "vagina", "balls", "anus", "Next","Vanilla","moded", "Discord"] => ["欲都孤儿威力加强版", "肉棒", "肉棒", "小穴", "蛋蛋", "菊穴","继续","原版","模组版","Discord"]
+5. 所有形如 [[...|...]] 的结构中，仅翻译左侧双括号内, 至管道标记符的部分到为中文, 不要混淆<<...>>
+6. 如果[[...|...]]内左侧是网址, 不翻译
+6. 专用名词对照表:  ["Degrees of Lewdity Plus", "dick", "penis", "vagina", "balls", "anus", "Next","Vanilla","moded", "Discord","plush"] => ["欲都孤儿威力加强版", "肉棒", "肉棒", "小穴", "蛋蛋", "菊穴","继续","原版","模组版","Discord","玩偶"]
 7. 人名对照表, 请确保人名对照翻译一致: ["Avery","Bailey","Briar","Charlie","Darryl","Doren","Eden","Gwylan","Harper","Jordan","Kylar","Landry","Leighton","Mason","Morgan","River","Robin","Sam","Sirris","Whitney","Winter","Black Wolf","Niki","Quinn","Remy","Alex","Great Hawk","Wren","Sydney","Ivory Wraith","Zephyr","Nona","Lake couple","the witch"] => ["艾弗里","贝利","布莱尔","查里","达里尔","多伦","伊甸","格威岚","哈珀","约旦","凯拉尔","兰德里","礼顿","梅森","摩根","瑞沃","罗宾","萨姆","西里斯","惠特尼","温特","黑狼","尼奇","奎恩","雷米","艾利克斯","巨鹰","伦恩","悉尼","象牙怨灵","泽菲尔","诺娜","湖边情侣","巫女"]
 9. 不要逐词逐句死板对照翻译，根据上下文选择恰当措辞搭配
 10. 英语原文中还会使用各种抽象表达，翻译需要表达指代的具体内容
