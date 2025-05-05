@@ -7,16 +7,16 @@ import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Any, Callable
-
+from .io_helper import IOHelper
 
 """
-    DiffHelper is a helper class for creating translations different files.
+    Differentiator use for creating translations different files.
     Useful to find the differences between the raw English and translated files, allow translator only focus differences.
     This implementation uses asyncio for high performance processing of multiple files in parallel.
 """
 
 
-class DiffHelper:
+class Differentiator:
     def __init__(
         self,
         translation_files_path: Path,
@@ -24,6 +24,7 @@ class DiffHelper:
         diff_files_path: Path,
         max_workers: int = None,
     ):
+        self._io_helper = IOHelper()
         self._translation_files_path = translation_files_path
         self._raw_files_path = raw_files_path
         self._diff_files_path = diff_files_path
@@ -86,7 +87,7 @@ class DiffHelper:
                 logger.info(
                     f"Translated file not found for {relative_path}. Copying raw file to diff."
                 )
-                await self._ensure_dir_exists(diff_file.parent)
+                self._io_helper.ensure_dir_exists(diff_file.parent)
                 return await self._run_in_executor(shutil.copy2, raw_file, diff_file)
 
             # run pandas operation in thread pool
@@ -101,11 +102,6 @@ class DiffHelper:
         except Exception as e:
             logger.error(f"Unexpected error processing {relative_path}: {e}")
             return False
-
-    async def _ensure_dir_exists(self, dir_path: Path) -> None:
-        """Ensure directory exists, create if not"""
-        if not dir_path.exists():
-            await self._run_in_executor(os.makedirs, dir_path, True)
 
     async def _run_in_executor(self, func: Callable, *args, **kwargs) -> Any:
         """Run function in thread pool"""
@@ -125,14 +121,16 @@ class DiffHelper:
         """
         try:
             # Load raw CSV
-            df_raw = self._load_csv(raw_file, ["id_r", "english"], relative_path, "raw")
+            df_raw = self._load_csv_to_dataframe(
+                raw_file, ["id_r", "english"], relative_path, "raw"
+            )
 
             if df_raw is None or df_raw.empty:
                 logger.info(f"Skipping empty raw file: {relative_path}")
                 return True
 
             # Load translated CSV to determine column structure
-            df_translated = self._load_csv(
+            df_translated = self._load_csv_to_dataframe(
                 translated_file, None, relative_path, "translated"
             )
 
@@ -190,7 +188,7 @@ class DiffHelper:
                 logger.error(f"Failed to copy raw file after error: {copy_error}")
                 return False
 
-    def _load_csv(
+    def _load_csv_to_dataframe(
         self,
         file_path: Path,
         column_names: Optional[List[str]],
@@ -245,15 +243,11 @@ class DiffHelper:
         """Count the number of rows in a single file asynchronously."""
         try:
             # use thread pool to read file
-            row_count = await self._run_in_executor(self._count_csv_rows, file_path)
+            row_count = await self._run_in_executor(
+                self._io_helper.count_csv_rows(), file_path
+            )
             logger.debug(f"File {file_path}: {row_count} rows")
             return row_count
         except Exception as e:
             logger.error(f"Error reading file {file_path}: {str(e)}")
             return None
-
-    def _count_csv_rows(self, file_path: Path) -> int:
-        """Count the number of rows in a CSV file in thread pool."""
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            reader = csv.reader(f)
-            return sum(1 for _ in reader)

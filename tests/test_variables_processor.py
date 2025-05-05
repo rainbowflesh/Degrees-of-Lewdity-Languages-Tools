@@ -103,30 +103,6 @@ class VariablesProcess:
             "variables": sorted(list(set(variables))),
         }
 
-    async def build_variables_notations(self):
-        """哪些变量可以翻译，写入文件，暂时弃用"""
-        filepath = DIR_DATA_ROOT / "json" / "variables_notations.json"
-
-        old_data = {}
-        if filepath.exists():
-            with open(filepath, "r", encoding="utf-8") as fp:
-                old_data: dict = json.load(fp)
-
-        new_data = {
-            var: {"var": var, "desc": "", "canBeTranslated": False}
-            for var in self._twee_variables
-        }
-
-        if old_data:
-            for key, items in old_data.items():
-                if items["desc"]:
-                    new_data[key] = items
-
-        with open(
-            DIR_DATA_ROOT / "json" / "variables_notations.json", "w", encoding="utf-8"
-        ) as fp:
-            json.dump(new_data, fp, ensure_ascii=False, indent=2)
-
     async def fetch_all_set_content(self) -> List[Dict]:
         """获取所有 <<set>> 内容，写入 setto 目录里"""
 
@@ -389,6 +365,3 @@ class VariablesProcess:
     def is_needed_translated(target: Any) -> bool:
         """判断目标值是否需要翻译"""
         return False if target is None else not isinstance(target, (float, bool))
-
-
-__all__ = ["VariablesProcess"]

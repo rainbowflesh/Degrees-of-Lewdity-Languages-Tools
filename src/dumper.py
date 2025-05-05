@@ -42,7 +42,7 @@ class Dumper:
 
         asyncio.run(self._get_twees())
 
-    """dump variables from .twee files"""
+    """dump and cache variables from .twee files"""
 
     async def dump_variables(self) -> None:
         results = await asyncio.gather(
@@ -58,7 +58,7 @@ class Dumper:
 
         await self._cache_variables()
 
-    """dump <<set>> from .twee files"""
+    """dump and cache <<set>> from .twee files"""
 
     async def dump_sets(self) -> List[Dict]:
         # try load from cache

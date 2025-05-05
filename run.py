@@ -6,7 +6,7 @@ from dotenv import dotenv_values
 from loguru import logger
 
 from src.formatter import Formatter
-from src.diff_helper import DiffHelper
+from src.differentiator import Differentiator
 from src.dumper import Dumper
 from src.translator import Translator
 from src.downloader import Downloader
@@ -81,7 +81,8 @@ _env = dotenv_values(".env")
 
 def UseDumper():
     _dumper = Dumper()
-    _dumper.dump()
+    _dumper.dump_sets()
+    _dumper.dump_variables()
 
 
 def UseDownloader(lang: str):
@@ -116,9 +117,9 @@ def UseFormatTranslates(format_translates: str):
 
 
 def UseDiff(translation_files_path: Path, raw_files_path: Path, diff_files_path: Path):
-    diff_helper = DiffHelper(translation_files_path, raw_files_path, diff_files_path)
-    asyncio.run(diff_helper.create_diff())
-    asyncio.run(diff_helper.count_diff_rows())
+    differ = Differentiator(translation_files_path, raw_files_path, diff_files_path)
+    asyncio.run(differ.create_diff())
+    asyncio.run(differ.count_diff_rows())
 
 
 @click.command(context_settings=dict(help_option_names=["-h", "--help"]))

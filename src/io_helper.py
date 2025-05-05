@@ -183,3 +183,83 @@ class IOHelper:
         except Exception as e:
             logger.error(f"Failed to append to CSV file {file_path}: {str(e)}")
             return False
+
+    def count_csv_rows(self, file_path: Path) -> int:
+        """Count the number of rows in a CSV file"""
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                reader = csv.reader(f)
+                return sum(1 for _ in reader)
+        except Exception as e:
+            logger.error(f"Failed to count CSV file {file_path}: {str(e)}")
+            return 0
+
+    def count_csv_row_translations(
+        self, file_path: str, check_translation: bool = False
+    ) -> int:
+        """count csv row with optional check_translation"""
+        count = 0
+        with open(file_path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if not row or len(row) < 2:
+                    continue  # skip invalid rows
+                if check_translation:
+                    if len(row) >= 3 and row[2].strip():  # translates
+                        count += 1
+                else:
+                    if row[1].strip():  # raw
+                        count += 1
+        return count
+
+    def truncate_csv_newline(self, file_path: str, n_lines: int):
+        with open(file_path, "r", encoding="utf-8") as f:
+            rows = list(csv.reader(f))[:n_lines]
+        with open(file_path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
+
+    def safe_csv_writer(self, file_path: str, mode: str, save_to_file: bool = False):
+        """Create CSV writer if needed"""
+
+        class NullWriter:
+            def writerow(self, _):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+        if not save_to_file:
+            return NullWriter()
+
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        file = open(file_path, mode, encoding="utf-8", newline="")
+        writer = csv.writer(file)
+
+        class FileWriterContext:
+            def __init__(self, file, writer):
+                self.file = file
+                self.writer = writer
+
+            def __enter__(self):
+                return self.writer
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                self.file.close()
+
+        return FileWriterContext(file, writer)
+
+    def get_last_translated_line(self, file_path: Path) -> int:
+        last_valid_row_id = -1
+        with open(file_path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) >= 3 and row[2].strip():
+                    try:
+                        last_valid_row_id = int(row[0])
+                    except ValueError:
+                        continue
+        return last_valid_row_id

@@ -113,10 +113,10 @@ class Translator:
                     self.do_batch_translate(padding_file, translates_file, 0, "w")
                     continue
 
-                padding_rows = self._get_csv_row_count(
+                padding_rows = self._io_helper.count_csv_row_translations(
                     padding_file, check_translation=False
                 )
-                translated_rows = self._get_csv_row_count(
+                translated_rows = self._io_helper.count_csv_row_translations(
                     translates_file, check_translation=True
                 )
 
@@ -125,7 +125,7 @@ class Translator:
                     continue
 
                 logger.info(f"Resuming {padding_file} from line {translated_rows + 1}")
-                self._truncate_csv_newline(
+                self._io_helper.truncate_csv_newline(
                     translates_file, translated_rows
                 )  # append to new line
                 self.do_batch_translate(
@@ -141,7 +141,9 @@ class Translator:
     ) -> None:
         batch_token_count = 0
 
-        with self._open_output_file(translates_file, mode) as writer:
+        with self._io_helper.safe_csv_writer(
+            translates_file, mode, self._save_to_file
+        ) as writer:
             try:
                 with open(padding_file, "r", encoding="utf-8") as input_file:
                     reader = csv.reader(input_file)
@@ -187,39 +189,6 @@ class Translator:
                 logger.error(f"Error in batch translation: {str(e)}")
                 raise
 
-    def _open_output_file(self, file_path: str, mode: str):
-        """Create CSV writer if needed"""
-
-        class NullWriter:
-            def writerow(self, _):
-                pass
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                pass
-
-        if not self._save_to_file:
-            return NullWriter()
-
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        file = open(file_path, mode, encoding="utf-8", newline="")
-        writer = csv.writer(file)
-
-        class FileWriterContext:
-            def __init__(self, file, writer):
-                self.file = file
-                self.writer = writer
-
-            def __enter__(self):
-                return self.writer
-
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                self.file.close()
-
-        return FileWriterContext(file, writer)
-
     def use_qwen(self, input: str) -> str:
         start_time = time.time()
         model = self._model
@@ -251,6 +220,10 @@ class Translator:
             duration = end_time - start_time
             logger.debug(f"use_qwen execution time: {duration:.4f} seconds")
 
+    def token_counter(self, input: str) -> int:
+        input_tokens = len(self._tokenizer.tokenize(input))
+        return self._prompt_token_length + input_tokens
+
     def _extract_translation(self, full_response: str) -> str:
         """trim thinking block from full response"""
         if "<think>" in full_response and "</think>" in full_response:
@@ -259,44 +232,3 @@ class Translator:
         # leave last line as result
         paragraphs = [p.strip() for p in full_response.split("\n\n")]
         return next((p for p in reversed(paragraphs) if p), full_response)
-
-    def token_counter(self, input: str) -> int:
-        input_tokens = len(self._tokenizer.tokenize(input))
-        return self._prompt_token_length + input_tokens
-
-    def _truncate_csv_newline(self, file_path: str, n_lines: int):
-        with open(file_path, "r", encoding="utf-8") as f:
-            rows = list(csv.reader(f))[:n_lines]
-        with open(file_path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerows(rows)
-
-    def _get_csv_row_count(
-        self, file_path: str, check_translation: bool = False
-    ) -> int:
-        """count csv row with optional check_translation"""
-        count = 0
-        with open(file_path, "r", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            for row in reader:
-                if not row or len(row) < 2:
-                    continue  # skip invalid rows
-                if check_translation:
-                    if len(row) >= 3 and row[2].strip():  # translates
-                        count += 1
-                else:
-                    if row[1].strip():  # raw
-                        count += 1
-        return count
-
-    def _get_last_translated_row_id(self, file_path):
-        last_valid_row_id = -1
-        with open(file_path, "r", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            for row in reader:
-                if len(row) >= 3 and row[2].strip():
-                    try:
-                        last_valid_row_id = int(row[0])
-                    except ValueError:
-                        continue
-        return last_valid_row_id

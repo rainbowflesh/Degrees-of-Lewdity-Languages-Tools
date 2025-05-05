@@ -1,4 +1,4 @@
-class Parser:
+class TweeParser:
     def __init__(self):
 
         pass
