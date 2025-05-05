@@ -23,7 +23,7 @@ class IOHelper:
             recursive: Whether to search in subdirectories (default: True)
 
         Returns:
-            List of file paths (as strings)
+            List of files obsolete path obj like [WindowsPath('foo.baa')]
         """
         files_list = []
         try:
